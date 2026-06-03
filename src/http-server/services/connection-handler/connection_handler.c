@@ -107,12 +107,15 @@ bool shutdown_connection(int file_descriptor, int type) {
 }
 
 bool accept_connection(sockaddr_storage *address, int *client_descriptor) {
+    DEBUG_LOG("accept_connection: Attempting to accept connection.");
     *client_descriptor = accept(socket_descriptor, (sockaddr *)address, &(socklen_t){ sizeof(sockaddr_storage) });
     if(!validate_syscall(*client_descriptor, "accept_connection", "Listening file descriptor did not give any data.")) {
+        DEBUG_LOG("accept_connection: Error, client_descriptor was set to: %d.", *client_descriptor);
         *client_descriptor = -1;
         return false;
     }
 
+    DEBUG_LOG("accept_connection: Successfully accepted connection.");
     return true;
 }
 
