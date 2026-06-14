@@ -27,7 +27,7 @@ static bool poll_events(int socket_descriptor) {
     // server runtime. 
     while(1) {
         struct kevent event;
-        // check for events.
+        // check for events - this blocks till the kernel updates off subscription.
         int num_events = kevent(event_queue, NULL, 0, &event, 1, NULL);
         if(!validate_syscall(
             num_events,
@@ -63,7 +63,7 @@ static bool poll_events(int socket_descriptor) {
 
                 // add new connection to queue.
                 struct kevent client_event;
-                EV_SET(&client_event, socket_descriptor, EVFILT_READ, EV_ADD | EV_ONESHOT, 0, 0, &socket_descriptor);
+                EV_SET(&client_event, *client_descriptor, EVFILT_READ, EV_ADD | EV_ONESHOT, 0, 0, client_descriptor);
                 if(!validate_syscall(
                     kevent(event_queue, &client_event, 1, NULL, 0, NULL),
                     "poll_events",
@@ -84,7 +84,7 @@ static bool poll_events(int socket_descriptor) {
 
             } else {
                 // connection received data, invoke a thread to process.
-                DEBUG_LOG("poll_events: Data received event.");
+                DEBUG_LOG("poll_events: Data event received.");
 
                 int socket_descriptor = *(int *)event.udata;
                 if(socket_descriptor < 0) {
@@ -147,7 +147,7 @@ bool start_processing() {
         "Fatal error, Failed to initialize kqueue.")
     ) { return false; }  
 
-    // subscribe to socket for update events.
+    // subscribe to main socket for connection events.
     struct kevent data_event;
     EV_SET(&data_event, socket_descriptor, EVFILT_READ, EV_ADD, 0, 0, NULL);
     if(!validate_syscall(
