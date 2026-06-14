@@ -10,16 +10,18 @@
 #include "configuration/configuration-handler/configuration_handler.h"
 #include "utilities/error-handler/error_handler.h"
 #include "services/connection-handler/connection_handler.h"
-#include "services/response-handler/response_handler.h"
+#include "services/http-handler/http_handler.h"
 
 #include "./thread_handler.h"
 
 static bool initialized = false;
 
 static thread_instance *threads; // holds all threads contiguously.
-static pthread_mutex_t lock;
-static pthread_cond_t lock_available;
-static connection_instance *queue_head; // linked list of connections.
+static pthread_mutex_t thread_lock;
+static pthread_cond_t thread_lock_available;
+static pthread_mutex_t enqueue_lock;
+static pthread_cond_t enqueue_lock_available;
+static connection_instance *queue_head; // linked list of connections < seems like this wasnt used, consider removing.
 static connection_instance **queue_tail = &queue_head;
 static int count = 0;
 
@@ -37,6 +39,9 @@ bool enqueue_task(int client_descriptor) {
         return false;
     }
 
+    // enqueue_task is not multi-threaded, this is just to guarantee safety + delay for observers.
+    pthread_mutex_lock(&enqueue_lock); 
+
     DEBUG_LOG("enqueue_task: Queuing task.");
 
     (*queue_tail)->next = calloc(1, sizeof(connection_instance));
@@ -53,8 +58,9 @@ bool enqueue_task(int client_descriptor) {
 
     ++count; 
     DEBUG_LOG("enqueue_task: Task successfully queued, total tasks: %d.", count); 
-
-    pthread_cond_signal(&lock_available); // notify waiting threads.
+ 
+    pthread_mutex_unlock(&enqueue_lock);
+    pthread_cond_signal(&enqueue_lock_available); // notify waiting threads. 
 
     return true;
 }
@@ -105,17 +111,26 @@ static bool process_request(int socket_descriptor) {
     DEBUG_LOG("process_request: Processing request on socket: %d.", socket_descriptor);
  
     // TODO: need to loop on this until the message is finished and store it properly.
-    char buffer[RECEIVE_BUFFER_SIZE + 1] = { 0 }; // leaving room for terminator.
-    size_t num_bytes_read = 0;
+    char *buffer = calloc(1, RECEIVE_BUFFER_SIZE); // leaving room for terminator.
+    char child_buffer[RECEIVE_BUFFER_SIZE] = { 0 };
+    size_t total_bytes_read = 0;
     while(1) {
-        memset(buffer, 0, RECEIVE_BUFFER_SIZE);
-        if(!receive_data(socket_descriptor, 0, (RECEIVE_BUFFER_SIZE - 1), buffer, &num_bytes_read)) {
+        size_t num_bytes_read = 0;
+        memset(child_buffer, 0, RECEIVE_BUFFER_SIZE);
+        if(!receive_data(socket_descriptor, 0, (RECEIVE_BUFFER_SIZE - 2), child_buffer, &num_bytes_read)) {
             ERROR_LOG("process_request: Failed to receive data.");
             return false;
         }
-        buffer[RECEIVE_BUFFER_SIZE] = '\0';
 
-        LOG("[ READ ]", "%s", buffer); 
+        LOG("[ READ ]", "%zu bytes.", num_bytes_read); 
+
+        if((total_bytes_read + num_bytes_read) >= RECEIVE_BUFFER_SIZE) {
+            ERROR_LOG("process_request: Request exceed maximum request size of %d.", RECEIVE_BUFFER_SIZE);
+            return false;
+        } 
+
+        *(buffer + total_bytes_read) = *child_buffer;
+        total_bytes_read += num_bytes_read;
 
         // end of data.
         if(num_bytes_read < 1) {
@@ -124,14 +139,15 @@ static bool process_request(int socket_descriptor) {
         }
     }
 
+    buffer[RECEIVE_BUFFER_SIZE - 1] = '\0';
+
     char *response_buffer = calloc(64, sizeof(char));
-    if(!invoke_response(socket_descriptor, buffer, &response_buffer)) {
+    if(!process_http_request(socket_descriptor, buffer, RECEIVE_BUFFER_SIZE, &response_buffer)) {
         ERROR_LOG("process_request: Failed to invoke response.");
         return false;
     }
 
     LOG("[ RESPONSE ]", "%s\n", response_buffer);
-
     return true;
 }
 
@@ -139,11 +155,11 @@ static void *thread_runner(void *client_descriptor) {
     DEBUG_LOG("thread_runner: Waiting for a connection to join the queue.");
 
     while(1) { 
-        pthread_mutex_lock(&lock); 
+        pthread_mutex_lock(&thread_lock); 
 
         while(count == 0) {
             DEBUG_LOG("thread_runner: Hit thread condition.");
-            pthread_cond_wait(&lock_available, &lock);
+            pthread_cond_wait(&thread_lock_available, &thread_lock);
         }
 
         DEBUG_LOG("thread_runner: Value found in queue.");
@@ -152,11 +168,11 @@ static void *thread_runner(void *client_descriptor) {
         *socket_descriptor = -1;
         if(!pull_next_task(socket_descriptor)) {
             ERROR_LOG("thread_runner: Failed to fetch socket_descriptor from queue.");
-            pthread_mutex_unlock(&lock);
+            pthread_mutex_unlock(&thread_lock);
             return NULL;
         }
 
-        pthread_mutex_unlock(&lock);
+        pthread_mutex_unlock(&thread_lock);
         DEBUG_LOG("thread_runner: Released lock.");
         
         if(!process_request(*socket_descriptor)) {
@@ -169,17 +185,28 @@ static void *thread_runner(void *client_descriptor) {
     return NULL;
 }
 
+// thread pool is a linked list of threads.
 bool init_thread_handler(void) {
     DEBUG_LOG("init_thread_handler: Initializing thread handler service.");
 
     // initialize mutex values.
-    if(pthread_mutex_init(&lock, NULL) != 0) {
-        ERROR_LOG("init_thread_handler: Fatal error, failed to initialize mutex.");
+    if(pthread_mutex_init(&thread_lock, NULL) != 0) {
+        ERROR_LOG("init_thread_handler: Fatal error, failed to initialize thread mutex.");
         return false;
     }
 
-    if(pthread_cond_init(&lock_available, NULL) != 0) {
-        ERROR_LOG("init_thread_handler: Fatal error, failed to initialize mutex condition.");
+    if(pthread_cond_init(&thread_lock_available, NULL) != 0) {
+        ERROR_LOG("init_thread_handler: Fatal error, failed to initialize thread mutex condition.");
+        return false;
+    }
+
+    if(pthread_mutex_init(&enqueue_lock, NULL) != 0) {
+        ERROR_LOG("init_thread_handler: Fatal error, failed to initialize enqueue mutex.");
+        return false;
+    }
+
+    if(pthread_cond_init(&enqueue_lock_available, NULL) != 0) {
+        ERROR_LOG("init_thread_handler: Fatal error, failed to initialize enqueue mutex condition.");
         return false;
     }
 

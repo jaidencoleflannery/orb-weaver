@@ -5,7 +5,7 @@
 
 #define LOG(tag, input, ...) printf(tag " " input "\n", ##__VA_ARGS__)
 
-#define ERROR_LOG(input, ...) fprintf(stderr, "[ ERROR ] " input "\n", ##__VA_ARGS__)
+#define ERROR_LOG(input, ...) fprintf(stderr, "\n!   [ ERROR ] " input "\n", ##__VA_ARGS__)
 
 #ifndef NDEBUG
 #define DEBUG_LOG(input, ...) fprintf(stderr, ">   [ DEBUG ] " input "\n", ##__VA_ARGS__)

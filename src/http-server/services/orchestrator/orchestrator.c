@@ -23,11 +23,13 @@
 
 static int event_queue;
 
+// + add new connections to kqueue.
+// + listen for data events on existing connections and process.
 static bool poll_events(int socket_descriptor) {
     // server runtime. 
     while(1) {
         struct kevent event;
-        // check for events - this blocks till the kernel updates off subscription.
+        // this will wait for events on main socket + any connections we add.
         int num_events = kevent(event_queue, NULL, 0, &event, 1, NULL);
         if(!validate_syscall(
             num_events,
@@ -83,7 +85,7 @@ static bool poll_events(int socket_descriptor) {
                 ) { continue; }
 
             } else {
-                // connection received data, invoke a thread to process.
+                // connection received data, add to task queue so a thread can process.
                 DEBUG_LOG("poll_events: Data event received.");
 
                 int socket_descriptor = *(int *)event.udata;
@@ -101,6 +103,8 @@ static bool poll_events(int socket_descriptor) {
     }
 }
 
+// + config initialization.
+// + listen to main socket.
 bool boot_server() {
     LOG("[ ORB ]", "Booting server.");
 
@@ -127,6 +131,8 @@ bool boot_server() {
     return true;
 }
 
+// + thread initialization.
+// + listen for new connections to main socket. 
 bool start_processing() {
     // initialize data.
     int socket_descriptor = -1;
@@ -135,6 +141,7 @@ bool start_processing() {
         return false;
     }
 
+    // shamefully greedy process lets the thread pool sit.
     if(!init_thread_handler()) {
         ERROR_LOG("start_processing: Fatal error, failed to initialize thread handler.");
         return false;
@@ -145,7 +152,7 @@ bool start_processing() {
         event_queue,
         "start_processing",
         "Fatal error, Failed to initialize kqueue.")
-    ) { return false; }  
+    ) { return false; }
 
     // subscribe to main socket for connection events.
     struct kevent data_event;
