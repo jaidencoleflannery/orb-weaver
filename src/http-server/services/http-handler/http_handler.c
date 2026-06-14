@@ -54,6 +54,7 @@ static bool get_http_metadata(char *message, size_t message_size, http_request *
             continue;
         }
 
+        // end of line logic.
         if((*message_cursor == '\n' && end_flag != true) 
         || (*message_cursor != '\n' && end_flag == true)) {
             // TODO: setup a response service for bad requests.
@@ -78,6 +79,7 @@ static bool get_http_metadata(char *message, size_t message_size, http_request *
             ++line_increment;
         }
 
+        // actual parsing.
         header_line[num_parsed] = *message_cursor;
         ++num_parsed;
         ++message_cursor;
