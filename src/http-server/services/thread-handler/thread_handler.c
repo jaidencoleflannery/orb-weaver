@@ -107,7 +107,6 @@ static bool process_request(int socket_descriptor) {
 
     DEBUG_LOG("process_request: Processing request on socket: %d.", socket_descriptor);
  
-    // TODO: need to loop on this until the message is finished and store it properly.
     char *buffer = calloc(1, RECEIVE_BUFFER_SIZE); // leaving room for terminator.
     char child_buffer[RECEIVE_BUFFER_SIZE] = { 0 };
     size_t total_bytes_read = 0;
