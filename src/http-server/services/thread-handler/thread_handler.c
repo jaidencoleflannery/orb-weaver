@@ -20,7 +20,6 @@ static thread_instance *threads; // holds all threads contiguously.
 static pthread_mutex_t thread_lock;
 static pthread_cond_t thread_lock_available;
 static pthread_mutex_t enqueue_lock;
-static pthread_cond_t enqueue_lock_available;
 static connection_instance *queue_head; // linked list of connections < seems like this wasnt used, consider removing.
 static connection_instance **queue_tail = &queue_head;
 static int count = 0;
@@ -60,8 +59,6 @@ bool enqueue_task(int client_descriptor) {
     DEBUG_LOG("enqueue_task: Task successfully queued, total tasks: %d.", count); 
  
     pthread_mutex_unlock(&enqueue_lock);
-    pthread_cond_signal(&enqueue_lock_available); // notify waiting threads. 
-
     return true;
 }
 
@@ -195,20 +192,15 @@ bool init_thread_handler(void) {
         return false;
     }
 
-    if(pthread_cond_init(&thread_lock_available, NULL) != 0) {
-        ERROR_LOG("init_thread_handler: Fatal error, failed to initialize thread mutex condition.");
-        return false;
-    }
-
     if(pthread_mutex_init(&enqueue_lock, NULL) != 0) {
         ERROR_LOG("init_thread_handler: Fatal error, failed to initialize enqueue mutex.");
         return false;
     }
 
-    if(pthread_cond_init(&enqueue_lock_available, NULL) != 0) {
-        ERROR_LOG("init_thread_handler: Fatal error, failed to initialize enqueue mutex condition.");
+    if(pthread_cond_init(&thread_lock_available, NULL) != 0) {
+        ERROR_LOG("init_thread_handler: Fatal error, failed to initialize thread mutex condition.");
         return false;
-    }
+    } 
 
     // prealloc pool based on num of performance cores.
     threads = calloc(1, (config.num_cores * sizeof(thread_instance)));
