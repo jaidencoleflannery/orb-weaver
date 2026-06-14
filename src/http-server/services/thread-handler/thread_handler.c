@@ -52,8 +52,10 @@ bool enqueue_task(int client_descriptor) {
     (*queue_tail)->socket_descriptor = client_descriptor;
 
     ++count; 
-    DEBUG_LOG("enqueue_task: Task successfully queued, total tasks: %d.", count);
+    DEBUG_LOG("enqueue_task: Task successfully queued, total tasks: %d.", count); 
+
     pthread_cond_signal(&lock_available); // notify waiting threads.
+
     return true;
 }
 
@@ -88,6 +90,7 @@ bool pull_next_task(int *result) {
         queue_head->next->previous = queue_head;
     }
 
+    // TODO: make sure this isn't messing up *result.
     free(task);
     --count;
     return true;
@@ -101,7 +104,7 @@ static bool process_request(int socket_descriptor) {
 
     DEBUG_LOG("process_request: Processing request on socket: %d.", socket_descriptor);
  
-    // TODO: need to loop on this until the message is finished.
+    // TODO: need to loop on this until the message is finished and store it properly.
     char buffer[RECEIVE_BUFFER_SIZE + 1] = { 0 }; // leaving room for terminator.
     size_t num_bytes_read = 0;
     while(1) {
@@ -132,7 +135,7 @@ static bool process_request(int socket_descriptor) {
     return true;
 }
 
-static void *thread_runner(void * client_descriptor) {
+static void *thread_runner(void *client_descriptor) {
     DEBUG_LOG("thread_runner: Waiting for a connection to join the queue.");
 
     while(1) { 
@@ -191,7 +194,7 @@ bool init_thread_handler(void) {
     for(int cursor = 0; cursor < config.num_cores; cursor++) {
         *(threads + cursor) = (thread_instance){
             .virtual_id = cursor,
-            .thread_id = (pthread_t)-1
+            .thread_id = (pthread_t)-1 // the actual thread's id. 
         };
 
         if(!validate_syscall(

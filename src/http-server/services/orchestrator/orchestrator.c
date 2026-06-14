@@ -27,6 +27,7 @@ static bool poll_events(int socket_descriptor) {
     // server runtime. 
     while(1) {
         struct kevent event;
+        // check for events.
         int num_events = kevent(event_queue, NULL, 0, &event, 1, NULL);
         if(!validate_syscall(
             num_events,
@@ -37,14 +38,26 @@ static bool poll_events(int socket_descriptor) {
         if(num_events > 0) {
             DEBUG_LOG("poll_events: Connection event flag signalled.");
 
-            sockaddr_storage *client_address = &(sockaddr_storage){ 0 }; 
+            sockaddr_storage *client_address = &(sockaddr_storage){ 0 };
+            int *client_descriptor = calloc(1, sizeof(int));
+            if(client_descriptor == NULL) {
+                ERROR_LOG("poll_events: Failed to allocate memory for client_descriptor.");
+                return false;
+            }
+
+            *client_descriptor = -1; 
  
             if((int)event.ident == socket_descriptor) {
                 // new connection.
                 DEBUG_LOG("poll_events: New connection event."); 
 
-                if(socket_descriptor == -1) {
-                    ERROR_LOG("poll_events: The stack variable socket_descriptor was not properly set when the connection was accepted.");
+                if(!accept_connection(client_address, client_descriptor)) {
+                    ERROR_LOG("poll_events: Failed to accept connection.");
+                    continue;
+                }
+
+                if(*client_descriptor == -1) {
+                    ERROR_LOG("poll_events: The stack variable client_descriptor was not properly set when the connection was accepted.");
                     continue; // skip the connection; this should never happen.
                 }
 
@@ -96,7 +109,7 @@ bool boot_server() {
         return false;
     }
  
-    addrinfo *addresses = { 0 }; 
+    addrinfo *addresses = { 0 };
     if(!get_local_addresses(false, &addresses)) {
         ERROR_LOG("boot_server: Failed to fetch local addresses.");
         return false;
@@ -134,7 +147,7 @@ bool start_processing() {
         "Fatal error, Failed to initialize kqueue.")
     ) { return false; }  
 
-    // subscribe.
+    // subscribe to socket for update events.
     struct kevent data_event;
     EV_SET(&data_event, socket_descriptor, EVFILT_READ, EV_ADD, 0, 0, NULL);
     if(!validate_syscall(

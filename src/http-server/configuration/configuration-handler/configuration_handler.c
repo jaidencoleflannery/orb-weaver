@@ -133,12 +133,14 @@ static bool parse_configuration(void) {
         LOG("[ Configuration ]", "Set value `%s` = %zu.", field_name_cache, value);
         DEBUG_LOG("Value directly from cache: %zu, %zu.", config.max_connections, config.port);
     } 
+    
+    DEBUG_LOG("initialize_configuration: Read configuration.\nmax_connections: %zu.\n port: %zu.\nnum_cores: %zu", config.max_connections, config.port, config.num_cores);
     return true;
 }
 
 bool initialize_configuration(void) {
     if(!parse_configuration()) {
-        ERROR_LOG("Defaulting to default configuration.");
+        ERROR_LOG("Error parsing configuration, defaulting to default configuration.");
         return false;
     }
 

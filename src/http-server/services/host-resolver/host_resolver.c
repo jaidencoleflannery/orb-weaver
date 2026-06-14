@@ -28,7 +28,7 @@ bool get_local_addresses(bool is_https, addrinfo **address_list) {
 
     int status;
     // cannot use validate_syscall here due to differing errno type.
-    if((status = getaddrinfo(NULL, port_string, &address_request, address_list)) != 0) { 
+    if((status = getaddrinfo(NULL, port_string, &address_request, address_list)) != 0) {
         ERROR_LOG("get_local_addresses: Error resolving addresses. Error: %s", gai_strerror(status));
         return false;
     }
@@ -39,6 +39,22 @@ bool get_local_addresses(bool is_https, addrinfo **address_list) {
     }
 
     DEBUG_LOG("get_local_addresses: Retrieved addresses from current machine.");
+    #ifndef NDEBUG
+        addrinfo *cursor = *address_list;
+        while(cursor != NULL) {
+            char address_string[INET6_ADDRSTRLEN];
+            void *binary_address;
+            if(cursor->ai_family == AF_INET) {
+                binary_address = &((sockaddr_in *)cursor->ai_addr)->sin_addr;
+            } else {
+                binary_address = &((sockaddr_in6 *)cursor->ai_addr)->sin6_addr;
+            }
+            inet_ntop(cursor->ai_family, binary_address, address_string, sizeof(address_string));
+            DEBUG_LOG("get_local_addresses: Found Address %s.", address_string);
+            cursor = cursor->ai_next;
+        }
+    #endif 
+
     return true;
 }
 
