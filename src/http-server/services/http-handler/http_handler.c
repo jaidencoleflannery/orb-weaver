@@ -32,30 +32,34 @@ static bool get_http_metadata(char *message, size_t message_size, http_request *
         return false;
     }
 
-    char header_line[MAX_HTTP_HEADER_SIZE];
-    size_t line_increment = 0; // to validate entry in type header line.
     char *message_cursor = message;
-    size_t num_parsed = 0;
-    bool is_malformed = true;
+    bool end_flag = false;
+
+    char header_line[MAX_HTTP_HEADER_SIZE];
+    size_t line_increment = 0; // to validate entry in type header line. 
+    size_t num_parsed = 0; 
 
     // get first line (type metadata).
     // '\n' denotes end of line, conditional validation within block is reliant on this.
-    while(message_cursor != NULL && *message_cursor != '\n') {
+    while(message_cursor != NULL) {
         if(num_parsed == MAX_HTTP_HEADER_SIZE ) {
             ERROR_LOG("get_http_metadata: Provided HTTP request's header value exceeded the maximum length of %d.", MAX_HTTP_HEADER_SIZE);
             return false;
-        } else if(is_malformed == false) {
-            // TODO: setup a response service for bad requests.
-            ERROR_LOG("process_http_request: Provided HTTP request line was malformed.");
-            return false;
-        } else if(*message_cursor == '\r') {
+        }
+
+        if(*message_cursor == '\r') {
             // '\r' marks the new carriage and is only valid for the end of a line (ie header value).
             // '\r' must be followed by '\n'.
-            is_malformed = false;
+            end_flag = true;
             continue;
         }
 
-        if(*message_cursor == ' ') {
+        if((*message_cursor == '\n' && end_flag != true) 
+        || (*message_cursor != '\n' && end_flag == true)) {
+            // TODO: setup a response service for bad requests.
+            ERROR_LOG("process_http_request: Provided HTTP request line was malformed.");
+            return false; 
+        } else if(*message_cursor == '\n' && end_flag == true) {
             bool validation_result = false;
             // if first line, get type.
             if(line_increment < 1)
@@ -68,8 +72,10 @@ static bool get_http_metadata(char *message, size_t message_size, http_request *
                 return false;
             }
 
-            // clear values so next iteration can grab headers.
+            // clear values so next iteration is clean.
             memset(header_line, 0, sizeof(header_line));
+            num_parsed = 0;
+            ++line_increment;
         }
 
         header_line[num_parsed] = *message_cursor;
