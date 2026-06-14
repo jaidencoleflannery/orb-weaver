@@ -2,6 +2,8 @@
 #define HTTP_HANDLER_H
 
 #define MAX_HTTP_HEADER_SIZE 8192
+#define PROTOCOL "HTTP"
+#define PROTOCOL_LOWER "http"
 
 typedef enum {
     TYPE_GET,
@@ -21,9 +23,9 @@ typedef struct {
 static const type_entry type_entries[] = {
     { "GET",    TYPE_GET },
     { "POST",   TYPE_POST },
-    { "PORT",   TYPE_PUT },
+    { "PUT",    TYPE_PUT },
     { "DELETE", TYPE_DELETE },
-    { NULL,     TYPE_NULL },
+    { NULL,     TYPE_NULL }
 };
 
 typedef struct {

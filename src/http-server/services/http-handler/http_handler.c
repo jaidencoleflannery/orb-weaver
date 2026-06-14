@@ -25,11 +25,10 @@ static bool validate_http_type(char *line, size_t type_size) {
             return false;
         }
 
-        if(*line_cursor == ' ') {
-            // request type.
-            if(word_increment == 0) {
+        if(*line_cursor == ' ') { 
+            if(word_increment == 0) { // request type.
                 if(num_parsed < 3) {
-                    ERROR_LOG("validate_http_type: First value of the type line was invalid.");
+                    ERROR_LOG("validate_http_type: First value (type) of the type line was invalid.");
                     return false;
                 }
 
@@ -42,13 +41,12 @@ static bool validate_http_type(char *line, size_t type_size) {
                 }
 
                 if(!type_valid) {
-                    ERROR_LOG("validate_http_type: First value of the type line was invalid.");
+                    ERROR_LOG("validate_http_type: First value (type) of the type line was invalid.");
                     return false;
-                } 
-            // route.
-            } else if(word_increment == 1) {
+                }  
+            } else if(word_increment == 1) { // route.
                 if(num_parsed < 1) {
-                    ERROR_LOG("validate_http_type: Second value of the type line was invalid.");
+                    ERROR_LOG("validate_http_type: Second value (route) of the type line was invalid.");
                     return false;
                 }
 
@@ -58,11 +56,33 @@ static bool validate_http_type(char *line, size_t type_size) {
                     route_valid = true;
 
                 if(!route_valid) {
-                    ERROR_LOG("validate_http_type: Second value of the type line was invalid.");
+                    ERROR_LOG("validate_http_type: Second value (route) of the type line was invalid.");
                     return false;
                 }
+            } else if(word_increment == 2) { // protocol.
+                if(num_parsed < 1) {
+                    ERROR_LOG("validate_http_type: Third value (protocol) of the type line was invalid.");
+                    return false;
+                }
+
+                bool protocol_valid = false;
+
+                line_partition[4] = '\0'; // this is scuffed, but it cuts out the protocol version.
+                if(strcmp(line_partition, PROTOCOL) == 0)
+                    protocol_valid = true;
+
+                if(strcmp(line_partition, PROTOCOL_LOWER) == 0)
+                    protocol_valid = true;
+
+                if(!protocol_valid) {
+                    ERROR_LOG("validate_http_type: Third value (protocol) of the type line was invalid.");
+                    return false;
+                }
+
+                // type header is valid, don't care if anything comes after.
+                return true;
             }
-             
+
             ++word_increment;
             ++num_parsed;
             // clear for next partition.
