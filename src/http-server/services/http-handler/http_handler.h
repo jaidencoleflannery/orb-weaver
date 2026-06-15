@@ -3,6 +3,10 @@
 
 #define PROTOCOL "HTTP"
 
+#define IS_KEY 0
+#define IS_ASSIGNING 1
+#define IS_VALUE 2
+
 #include "types/http-types/http_types.h"
 
 // table of entries for method lookup.

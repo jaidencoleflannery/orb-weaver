@@ -16,11 +16,19 @@ typedef enum {
 } http_request_method;
 
 typedef struct { 
+    size_t  key_size;
+    size_t  value_size;
+    char    *key; 
+    char    *value;
+    bool    valid;
+} http_request_header;
+
+typedef struct { 
     size_t              http_route_size; 
     size_t              http_headers_size; 
     size_t              http_body_size; 
     http_request_method http_method;
-    char                **http_headers;
+    http_request_header *http_headers;
     char                *http_route;
     char                *http_body;
 } http_request;

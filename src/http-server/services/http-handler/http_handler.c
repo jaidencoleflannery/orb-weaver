@@ -100,21 +100,87 @@ static bool validate_http_method(char *line, size_t line_size, http_request *res
     return true;
 }
 
+// validate a single header.
 static bool validate_http_header(char *header, size_t header_size, http_request *result_metadata) {
     if(header == NULL) {
         ERROR_LOG("validate_http_header: Provided header parameter was invalid.");
         return false;
     }
 
-    // flag for if we hit ':'.
-    bool assignment_flag;
+    http_request_header *result = (http_request_header *)calloc(1, sizeof(http_request_header)); 
+    if(result == NULL) {
+        ERROR_LOG("validate_http_header: Failed to allocate memory for header result.");
+        return false;
+    } 
+
+    result->value = (char *)calloc(1, sizeof(header_size));
+    if(result->key == NULL) {
+        ERROR_LOG("validate_http_header: Failed to allocate memory for header result value.");
+        return false;
+    }
+
+    char key[header_size];
+    char value[header_size];
+    int num_parsed;
+
+    // flag for three portions of header.
+    int flag = IS_KEY;
+
+    // flag for end of line.
+    bool end_flag = false;
 
     char *header_cursor = header;
-    while(header_cursor != NULL) {
-        if(*header_cursor == ' ' && !assignment_flag) {
-            ERROR_LOG("validate_http_header: Header was malformed.");
-            continue; // just ignore bad headers.
+    while(header_cursor != NULL) { 
+        if(*header_cursor == ':') {
+            if(flag != IS_KEY) {
+                ERROR_LOG("validate_http_header: Header was malformed.");
+                return false;
+            }
+
+            flag = IS_ASSIGNING; // next char needs to be a space.
+            ++header_cursor;
+            continue;
+        } else if(*header_cursor == ' ') {
+            if(flag != IS_ASSIGNING) {
+                ERROR_LOG("validate_http_header: Header was malformed.");
+                return false;
+            }        
+
+            result->key = calloc(1, num_parsed);
+            if(result->key == NULL) {
+                ERROR_LOG("validate_http_header: Failed to allocate memory for header result key.");
+                return false;
+            }
+
+            memcpy(result->key, key, num_parsed);
+
+            flag = IS_VALUE;
+            ++header_cursor;
+            num_parsed = 0;
+            continue;
         }
+
+        // last character was ':' but this character was not ' '.
+        if(flag == IS_ASSIGNING && *header_cursor != ' ') {
+            ERROR_LOG("validate_http_header: Header was malformed.");
+            return false;
+        }
+
+        if(*header_cursor == '\r') {
+            if(flag != IS_VALUE) {
+                ERROR_LOG("validate_http_header: Header was malformed.");
+                return false;
+            }
+
+            if() // TODO: left off here, need to validate end of header (this whole function needs to be polished).
+        }
+
+        if(flag == IS_KEY)
+            key[num_parsed] = *header_cursor;
+        else if(flag == IS_VALUE)
+            value[num_parsed] = *header_cursor;
+
+        ++header_cursor;
     }
 
     return true;
@@ -202,7 +268,10 @@ bool process_http_request(int socket_descriptor, char *message, size_t message_s
         return false;
     }
 
-    // TODO: process body here and assign result to *response.
+    if(!route_http_request(message, message_size, &result_metadata)) {
+        ERROR_LOG("process_http_request: Failed to route HTTP request.");
+        return false;
+    }
 
     if(!free_http_request(result_metadata)) {
         ERROR_LOG("process_http_request: Failed to free instance of http_request.");

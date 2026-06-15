@@ -23,21 +23,13 @@ bool allocate_http_request(http_request **http_request_instance) {
 
     (*http_request_instance)->http_method = TYPE_NULL;
 
+    // caller is expected to allocate their own headers as needed.
+    // the included free function in this unit covers any allocation.
     (*http_request_instance)->http_headers_size = 0;
-    (*http_request_instance)->http_headers = calloc(MAX_HTTP_HEADER_COUNT, sizeof(void *));
+    (*http_request_instance)->http_headers = calloc(MAX_HTTP_HEADER_COUNT, sizeof(http_request_header));
     if((*http_request_instance)->http_headers == NULL) {
         ERROR_LOG("allocate_http_request: Failed to allocate memory for http_headers.");
         return false;
-    }
-
-    char **header_cursor = (*http_request_instance)->http_headers;
-    while(header_cursor != NULL) {
-        *header_cursor = calloc(1, MAX_HTTP_HEADER_SIZE);
-        if(header_cursor == NULL) {
-            ERROR_LOG("allocate_http_request: Failed to allocate memory for header children.");
-            return false;
-        }
-        ++header_cursor;
     }
 
     (*http_request_instance)->http_route_size = 0;
@@ -68,7 +60,8 @@ bool free_http_request(http_request *http_request_instance) {
         function_result = false;
     }
 
-    char **header_cursor = http_request_instance->http_headers;
+    // clear any allocation the caller performed.
+    http_request_header *header_cursor = http_request_instance->http_headers;
     while(header_cursor != NULL) {
         free(header_cursor);
         if(header_cursor != NULL) {
