@@ -33,7 +33,7 @@ bool allocate_http_request(http_request **http_request_instance) {
     char **header_cursor = (*http_request_instance)->http_headers;
     while(header_cursor != NULL) {
         *header_cursor = calloc(1, MAX_HTTP_HEADER_SIZE);
-        if((*http_request_instance)->http_headers == NULL) {
+        if(header_cursor == NULL) {
             ERROR_LOG("allocate_http_request: Failed to allocate memory for header children.");
             return false;
         }
@@ -55,13 +55,42 @@ bool allocate_http_request(http_request **http_request_instance) {
 
 bool free_http_request(http_request *http_request_instance) {
     if(http_request_instance == NULL) {
-        ERROR_LOG("allocate_http_request: Provided http_request pointer was NULL.");
+        ERROR_LOG("free_http_request: Provided http_request pointer was NULL.");
         return false;
     }
+
+    bool function_result = true;
     
-    free(http_request_instance->http_route);
+    if(http_request_instance->http_route != NULL)
+        free(http_request_instance->http_route);
+    if(http_request_instance->http_route != NULL) {
+        ERROR_LOG("free_http_request: Failed to free http_route.");
+        function_result = false;
+    }
 
+    char **header_cursor = http_request_instance->http_headers;
+    while(header_cursor != NULL) {
+        free(header_cursor);
+        if(header_cursor != NULL) {
+            ERROR_LOG("free_http_request: Failed to free child header.");
+            function_result = false;
+        }
+        ++header_cursor;
+    }
 
-    return true;
+    if(http_request_instance->http_headers != NULL)
+        free(http_request_instance->http_headers);
+    if(http_request_instance->http_headers != NULL) {
+        ERROR_LOG("free_http_request: Failed to free http_headers.");
+        function_result = false;
+    }
+
+    free(http_request_instance);
+    if(http_request_instance != NULL) {
+        ERROR_LOG("free_http_request: Failed to free http_headers.");
+        function_result = false;
+    }
+
+    return function_result;
 }
 

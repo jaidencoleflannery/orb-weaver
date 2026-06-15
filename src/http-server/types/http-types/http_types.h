@@ -25,5 +25,9 @@ typedef struct {
     char                *http_body;
 } http_request;
 
+bool allocate_http_request(http_request **http_request_instance);
+
+bool free_http_request(http_request *http_request_instance);
+
 #endif
 

@@ -121,9 +121,10 @@ static bool validate_http_header(char *header, size_t header_size, http_request 
 }
 
 // request metadata (line 0) is considered a header here.
-static bool get_http_metadata(char *message, size_t message_size, http_request *result_metadata) {
+static bool get_http_metadata(char *message, size_t message_size, http_request **result_metadata) {
     if(message == NULL 
     || result_metadata == NULL 
+    || *result_metadata == NULL
     || message_size == 0) {
         ERROR_LOG("get_http_metadata: Parameter provided was invalid.");
         return false;
@@ -160,9 +161,9 @@ static bool get_http_metadata(char *message, size_t message_size, http_request *
         } else if(*message_cursor == '\n' && end_flag == true) {
             bool validation_result = false;
             if(line_increment < 1) // if first line, get method.
-                validation_result = validate_http_method(header_line, num_parsed, result_metadata); 
+                validation_result = validate_http_method(header_line, num_parsed, *result_metadata); 
             else // else, parse current header.
-                validation_result = validate_http_header(header_line, num_parsed, result_metadata);
+                validation_result = validate_http_header(header_line, num_parsed, *result_metadata);
 
             if(!validation_result) {
                 ERROR_LOG("get_http_metadata: Provided HTTP request's method or headers vere invalid.");
@@ -190,13 +191,24 @@ bool process_http_request(int socket_descriptor, char *message, size_t message_s
         return false;
     }
 
-    http_request result_metadata = calloc(1, sizeof(http_request));
+    http_request *result_metadata;
+    if(!allocate_http_request(&result_metadata)) {
+        ERROR_LOG("process_http_request: Failed to allocate memory for http_request.");
+        return false;
+    }
+
     if(!get_http_metadata(message, message_size, &result_metadata)) {
         ERROR_LOG("process_http_request: Failed to parse http request headers.");
         return false;
     }
 
-    *response = "ok...";
+    // TODO: process body here and assign result to *response.
+
+    if(!free_http_request(result_metadata)) {
+        ERROR_LOG("process_http_request: Failed to free instance of http_request.");
+        return false;
+    }
+
     return true;
 }
 
