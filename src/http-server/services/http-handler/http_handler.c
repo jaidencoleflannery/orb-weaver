@@ -4,64 +4,70 @@
 #include <string.h>
 
 #include "services/logging/logging.h"
+#include "types/http-types/http_types.h"
 
 #include "./http_handler.h"
 
-// type validation is highly dependent on the http_request_type enum.
-static bool validate_http_type(char *line, size_t type_size) {
+// method validation is highly dependent on the http_request_method enum.
+static bool validate_http_method(char *line, size_t line_size, http_request *result_metadata) {
     if(line == NULL) {
-        ERROR_LOG("validate_http_type: Provided type parameter was invalid.");
+        ERROR_LOG("validate_http_method: Provided method parameter was invalid.");
         return false;
     }
 
-    char line_partition[type_size]; 
+    char line_partition[line_size]; 
     size_t num_parsed = 0;
     size_t word_increment = 0;
 
     char *line_cursor = line;
     while(line_cursor != NULL) {
-        if(num_parsed >= type_size || num_parsed >= MAX_HTTP_HEADER_SIZE) {
-            ERROR_LOG("validate_http_type: Provided line exceeded the maximum header size.");
+        if(num_parsed >= line_size || num_parsed >= MAX_HTTP_HEADER_SIZE) {
+            ERROR_LOG("validate_http_method: Provided line exceeded the maximum header size.");
             return false;
         }
 
         if(*line_cursor == ' ') { 
-            if(word_increment == 0) { // request type.
+            if(word_increment == 0) { // request method.
                 if(num_parsed < 3) {
-                    ERROR_LOG("validate_http_type: First value (type) of the type line was invalid.");
+                    ERROR_LOG("validate_http_method: First value (method) of the method line was invalid.");
                     return false;
                 }
 
-                bool type_valid = false;
-                for(int type_cursor = 0; type_cursor < TYPE_COUNT; type_cursor++) {
-                    if(strcmp(line_partition, type_entries[type_cursor].name) == 0) {
-                        type_valid = true;
+                bool method_valid = false;
+                for(int method_cursor = 0; method_cursor < TYPE_COUNT; method_cursor++) {
+                    if(strcmp(line_partition, method_entries[method_cursor].name) == 0) {
+                        result_metadata->http_method = method_entries[method_cursor].method;
+                        method_valid = true;
                         break;
                     }
                 }
 
-                if(!type_valid) {
-                    ERROR_LOG("validate_http_type: First value (type) of the type line was invalid.");
+                if(!method_valid) {
+                    ERROR_LOG("validate_http_method: First value (method) of the method line was invalid.");
+                    result_metadata->http_method = TYPE_NULL;
                     return false;
                 }  
             } else if(word_increment == 1) { // route.
                 if(num_parsed < 1) {
-                    ERROR_LOG("validate_http_type: Second value (route) of the type line was invalid.");
+                    ERROR_LOG("validate_http_method: Second value (route) of the method line was invalid.");
                     return false;
                 }
 
                 bool route_valid = false;
                 // if you're looking for the route handler, you're at the wrong castle.
-                if(*line_partition == '/')
+                if(*line_partition == '/') {
+                    memcpy(result_metadata->http_route, line_partition, sizeof(line_partition));
                     route_valid = true;
+                }
 
                 if(!route_valid) {
-                    ERROR_LOG("validate_http_type: Second value (route) of the type line was invalid.");
+                    ERROR_LOG("validate_http_method: Second value (route) of the method line was invalid.");
+                    result_metadata->http_route = NULL;
                     return false;
                 }
             } else if(word_increment == 2) { // protocol.
                 if(num_parsed < 1) {
-                    ERROR_LOG("validate_http_type: Third value (protocol) of the type line was invalid.");
+                    ERROR_LOG("validate_http_method: Third value (protocol) of the method line was invalid.");
                     return false;
                 }
 
@@ -71,22 +77,19 @@ static bool validate_http_type(char *line, size_t type_size) {
                 if(strcmp(line_partition, PROTOCOL) == 0)
                     protocol_valid = true;
 
-                if(strcmp(line_partition, PROTOCOL_LOWER) == 0)
-                    protocol_valid = true;
-
                 if(!protocol_valid) {
-                    ERROR_LOG("validate_http_type: Third value (protocol) of the type line was invalid.");
+                    ERROR_LOG("validate_http_method: Third value (protocol) of the method line was invalid.");
                     return false;
                 }
 
-                // type header is valid, don't care if anything comes after.
+                // method header is valid, don't care if anything comes after.
                 return true;
             }
 
             ++word_increment;
             ++num_parsed;
             // clear for next partition.
-            memset(line_partition, 0, type_size);
+            memset(line_partition, 0, line_size);
             continue;
         }
 
@@ -97,19 +100,30 @@ static bool validate_http_type(char *line, size_t type_size) {
     return true;
 }
 
-static bool validate_http_headers(char *type, size_t type_size) {
-    if(type == NULL) {
-        ERROR_LOG("validate_http_type: Provided type parameter was invalid.");
+static bool validate_http_header(char *header, size_t header_size, http_request *result_metadata) {
+    if(header == NULL) {
+        ERROR_LOG("validate_http_header: Provided header parameter was invalid.");
         return false;
+    }
+
+    // flag for if we hit ':'.
+    bool assignment_flag;
+
+    char *header_cursor = header;
+    while(header_cursor != NULL) {
+        if(*header_cursor == ' ' && !assignment_flag) {
+            ERROR_LOG("validate_http_header: Header was malformed.");
+            continue; // just ignore bad headers.
+        }
     }
 
     return true;
 }
 
 // request metadata (line 0) is considered a header here.
-static bool get_http_metadata(char *message, size_t message_size, http_request *result) {
+static bool get_http_metadata(char *message, size_t message_size, http_request *result_metadata) {
     if(message == NULL 
-    || result == NULL 
+    || result_metadata == NULL 
     || message_size == 0) {
         ERROR_LOG("get_http_metadata: Parameter provided was invalid.");
         return false;
@@ -119,10 +133,10 @@ static bool get_http_metadata(char *message, size_t message_size, http_request *
     bool end_flag = false;
 
     char header_line[MAX_HTTP_HEADER_SIZE];
-    size_t line_increment = 0; // to validate entry in type header line. 
+    size_t line_increment = 0; // to validate entry in method header line. 
     size_t num_parsed = 0; 
 
-    // get first line (type metadata).
+    // get first line (method metadata).
     // '\r\n' denotes end of line, conditional validation within block is reliant on this.
     while(message_cursor != NULL) {
         if(num_parsed == MAX_HTTP_HEADER_SIZE ) {
@@ -144,14 +158,14 @@ static bool get_http_metadata(char *message, size_t message_size, http_request *
             ERROR_LOG("process_http_request: Provided HTTP request line was malformed.");
             return false; 
         } else if(*message_cursor == '\n' && end_flag == true) {
-            bool validation_result = false; 
-            if(line_increment < 1) // if first line, get type.
-                validation_result = validate_http_type(header_line, num_parsed); 
-            else // else, parse headers.
-                validation_result = validate_http_headers(header_line, num_parsed);
+            bool validation_result = false;
+            if(line_increment < 1) // if first line, get method.
+                validation_result = validate_http_method(header_line, num_parsed, result_metadata); 
+            else // else, parse current header.
+                validation_result = validate_http_header(header_line, num_parsed, result_metadata);
 
             if(!validation_result) {
-                ERROR_LOG("get_http_metadata: Provided HTTP request's headers vere invalid.");
+                ERROR_LOG("get_http_metadata: Provided HTTP request's method or headers vere invalid.");
                 return false;
             }
 
@@ -176,8 +190,8 @@ bool process_http_request(int socket_descriptor, char *message, size_t message_s
         return false;
     }
 
-    http_request *request_headers = { 0 }; 
-    if(!get_http_metadata(message, message_size, request_headers)) {
+    http_request result_metadata = calloc(1, sizeof(http_request));
+    if(!get_http_metadata(message, message_size, &result_metadata)) {
         ERROR_LOG("process_http_request: Failed to parse http request headers.");
         return false;
     }
