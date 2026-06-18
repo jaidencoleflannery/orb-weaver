@@ -258,31 +258,44 @@ static bool get_http_metadata(char *message, size_t message_size, http_request *
     return true;
 }
 
+static bool route_http_request(char *message, size_t message_size, http_request **result_metadata) {
+    if(message == NULL 
+    || result_metadata == NULL 
+    || *result_metadata == NULL
+    || message_size == 0) {
+        ERROR_LOG("get_http_metadata: Parameter provided was invalid.");
+        return false;
+    }
+
+    // TODO: complete this once dynamic routing has been implemented.
+    return true;
+}
+
 bool process_http_request(int socket_descriptor, char *message, size_t message_size, char **response) {
     if(message == NULL || *response == NULL) {
         ERROR_LOG("process_http_request: Invalid parameter was provided.");
         return false;
     }
 
-    http_request *result_metadata;
-    if(!allocate_http_request(&result_metadata)) {
+    // heap alloc.
+    http_request *parsing_result;
+    if(!allocate_http_request(&parsing_result)) {
         ERROR_LOG("process_http_request: Failed to allocate memory for http_request.");
         return false;
     }
 
-    if(!get_http_metadata(message, message_size, &result_metadata)) {
+    if(!get_http_metadata(message, message_size, &parsing_result)) {
         ERROR_LOG("process_http_request: Failed to parse http request headers.");
         return false;
     }
 
-    /*
-    if(!route_http_request(message, message_size, &result_metadata)) {
+    if(!route_http_request(message, message_size, &parsing_result)) {
         ERROR_LOG("process_http_request: Failed to route HTTP request.");
         return false;
     }
-    */
 
-    if(!free_http_request(result_metadata)) {
+    // free memory.
+    if(!free_http_request(parsing_result)) {
         ERROR_LOG("process_http_request: Failed to free instance of http_request.");
         return false;
     }
