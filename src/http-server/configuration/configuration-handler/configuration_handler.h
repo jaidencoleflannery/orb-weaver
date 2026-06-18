@@ -10,18 +10,22 @@
 #endif
 
 #define CONFIG_FOLDER "configuration"
+#define READ_ONLY "r"
+
 #define DEFAULT_MAX_CONNECTIONS 4096
 #define DEFAULT_PORT 8888
 #define DEFAULT_NUM_CORES 8
+#define DEFAULT_MAX_NUM_ROUTES 256
+
 #define MAX_VALUE_LENGTH 20
 #define MAX_FIELD_LENGTH 200
-#define READ_ONLY "r"
 
 typedef enum {
     CONFIG_MAX_CONNECTIONS,
     CONFIG_PORT,
     CONFIG_NUM_CORES,
-    CONFIG_NULL,
+    CONFIG_MAX_NUM_ROUTES,
+    CONFIG_NULL
 } config_values;
 
 // keep fields the same data type so validation is straightforward.
@@ -29,6 +33,7 @@ typedef struct {
     size_t  max_connections;
     size_t  port;
     size_t  num_cores;
+    size_t  max_num_routes;
 } configuration;
 
 // table of entries for lookup.
@@ -42,6 +47,7 @@ static const cfg_entry cfg_entries[] = {
     { "max_connections",    offsetof(configuration, max_connections),   CONFIG_MAX_CONNECTIONS },
     { "port",               offsetof(configuration, port),              CONFIG_PORT },
     { "num_cores",          offsetof(configuration, num_cores),         CONFIG_NUM_CORES },
+    { "max_num_routes",     offsetof(configuration, max_num_routes),    CONFIG_MAX_NUM_ROUTES },
     { NULL,                 0,                                          CONFIG_NULL },
 };
 

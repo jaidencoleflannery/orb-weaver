@@ -16,8 +16,11 @@
 configuration config = (configuration){
     .max_connections = DEFAULT_MAX_CONNECTIONS,
     .port = DEFAULT_PORT,
-    .num_cores = DEFAULT_NUM_CORES
+    .num_cores = DEFAULT_NUM_CORES,
+    .max_num_routes = DEFAULT_MAX_NUM_ROUTES
 };
+
+// TODO: parse max_num_routes from config (not currently setup).
 
 static bool validate_field_name(char *name, cfg_entry *entry_field) {
     const cfg_entry *valid_entries = cfg_entries;
