@@ -107,6 +107,7 @@ static bool validate_http_header(char *header, size_t header_size, http_request 
         return false;
     }
 
+    // storage for parsed header.
     http_request_header *result = (http_request_header *)calloc(1, sizeof(http_request_header)); 
     if(result == NULL) {
         ERROR_LOG("validate_http_header: Failed to allocate memory for header result.");
@@ -124,14 +125,15 @@ static bool validate_http_header(char *header, size_t header_size, http_request 
     int num_parsed;
 
     // flag for three portions of header.
-    int flag = IS_KEY;
+    header_status flag = IS_KEY;
 
     // flag for end of line.
     bool end_flag = false;
 
     char *header_cursor = header;
     while(header_cursor != NULL) { 
-        if(*header_cursor == ':') {
+        // end of key sentinel, set status flags.
+        if(*header_cursor == ':') { 
             if(flag != IS_KEY) {
                 ERROR_LOG("validate_http_header: Header was malformed.");
                 return false;
@@ -140,7 +142,10 @@ static bool validate_http_header(char *header, size_t header_size, http_request 
             flag = IS_ASSIGNING; // next char needs to be a space.
             ++header_cursor;
             continue;
-        } else if(*header_cursor == ' ') {
+        }
+
+        // end of key reached, if syntax is correct store the value and clear cache.
+        if(*header_cursor == ' ') { 
             if(flag != IS_ASSIGNING) {
                 ERROR_LOG("validate_http_header: Header was malformed.");
                 return false;
@@ -172,9 +177,11 @@ static bool validate_http_header(char *header, size_t header_size, http_request 
                 return false;
             }
 
-            if() // TODO: left off here, need to validate end of header (this whole function needs to be polished).
+            end_flag = true;
+            // TODO: validate end of header.
         }
 
+        // assign values if we pass the validations.
         if(flag == IS_KEY)
             key[num_parsed] = *header_cursor;
         else if(flag == IS_VALUE)
@@ -268,10 +275,12 @@ bool process_http_request(int socket_descriptor, char *message, size_t message_s
         return false;
     }
 
+    /*
     if(!route_http_request(message, message_size, &result_metadata)) {
         ERROR_LOG("process_http_request: Failed to route HTTP request.");
         return false;
     }
+    */
 
     if(!free_http_request(result_metadata)) {
         ERROR_LOG("process_http_request: Failed to free instance of http_request.");

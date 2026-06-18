@@ -3,10 +3,6 @@
 
 #define PROTOCOL "HTTP"
 
-#define IS_KEY 0
-#define IS_ASSIGNING 1
-#define IS_VALUE 2
-
 #include "types/http-types/http_types.h"
 
 // table of entries for method lookup.
@@ -14,6 +10,13 @@ typedef struct {
     char                *name; 
     http_request_method method;
 } method_entry;
+
+// for header parsing.
+typedef enum {
+    IS_KEY,
+    IS_ASSIGNING,
+    IS_VALUE
+} header_status;
 
 static const method_entry method_entries[] = {
     { "GET",    TYPE_GET },
