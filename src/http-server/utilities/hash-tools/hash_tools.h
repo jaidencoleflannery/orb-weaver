@@ -1,12 +1,12 @@
 #ifndef HASH_TOOLS_H
 #define HASH_TOOLS_H
 
-#define MAX_KEY_LENGTH
+#define MAX_KEY_LENGTH 256
+#define KEYGEN_SALT 31
 
-typedef struct {
-    char *key;
+typedef struct { 
     void *value;
-    size_t index; // hash index.
+    char *key;
 } hash_entry;
 
 bool hash_allocate(size_t num_entries, hash_entry **result);
