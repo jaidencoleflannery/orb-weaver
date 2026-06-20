@@ -1,17 +1,17 @@
-#ifndef DYNAMIC_ROUTER_H
-#define DYNAMIC_ROUTER_H
+#ifndef ROUTER_H
+#define ROUTER_H
 
 #include "types/http-types/http_types.h"
 
 typedef struct {
     http_request_method method;
     size_t path_size;
-    char path[]; 
-} route;
+    char path[];
+} route_metadata;
 
 typedef struct {   
     http_request request;
-    route path;
+    route_metadata path;
 } http_routing_payload;
 
 bool initialize();

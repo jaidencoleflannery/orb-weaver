@@ -9,8 +9,8 @@
 #include "services/logging/logging.h"
 #include "configuration/configuration-handler/configuration_handler.h"
 #include "utilities/error-handler/error_handler.h"
-#include "services/connection-handler/connection_handler.h"
-#include "services/http-handler/http_handler.h"
+#include "services/tcp/connection-handler/connection_handler.h"
+#include "services/http/http-handler/http_handler.h"
 
 #include "./thread_handler.h"
 

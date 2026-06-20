@@ -8,9 +8,9 @@
 
 #include "types/address-types/address_types.h"
 #include "services/logging/logging.h"
-#include "services/thread-handler/thread_handler.h"
-#include "services/host-resolver/host_resolver.h"
-#include "services/connection-handler/connection_handler.h"
+#include "services/orchestration/thread-handler/thread_handler.h"
+#include "services/tcp/host-resolver/host_resolver.h"
+#include "services/tcp/connection-handler/connection_handler.h"
 #include "configuration/configuration-handler/configuration_handler.h"
 #include "utilities/error-handler/error_handler.h"
 

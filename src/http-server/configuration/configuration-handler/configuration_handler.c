@@ -136,8 +136,7 @@ static bool parse_configuration(void) {
         LOG("[ Configuration ]", "Set value `%s` = %zu.", field_name_cache, value);
         DEBUG_LOG("Value directly from cache: %zu, %zu.", config.max_connections, config.port);
     } 
-    
-    DEBUG_LOG("initialize_configuration: Read configuration.\nmax_connections: %zu.\n port: %zu.\nnum_cores: %zu", config.max_connections, config.port, config.num_cores);
+     
     return true;
 }
 
@@ -148,7 +147,6 @@ bool initialize_configuration(void) {
     }
 
     DEBUG_LOG("initialize_configuration: Configuration loaded successfully.");
-
 
     int32_t *num_cores = &(int32_t){ -1 };
     if(!validate_syscall(
@@ -164,7 +162,12 @@ bool initialize_configuration(void) {
     }
 
     config.num_cores = (size_t)*num_cores - 1; // leave one off so the system isn't fully exhausted.
-    DEBUG_LOG("initialize_configuration: Fetched number of cores successfully (%zu).", config.num_cores);
+    DEBUG_LOG("initialize_configuration: Read configuration.\nmax_connections: %zu.\n port: %zu.\nnum_cores: %zu.\nmax_num_routes: %zu.\n", 
+        config.max_connections, 
+        config.port, 
+        config.num_cores,
+        config.max_num_routes
+    );
 
     return true;
 }
