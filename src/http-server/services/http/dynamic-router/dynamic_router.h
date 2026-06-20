@@ -1,5 +1,5 @@
-#ifndef ROUTER_H
-#define ROUTER_H
+#ifndef DYNAMIC_ROUTER_H
+#define DYNAMIC_ROUTER_H
 
 #include "types/http-types/http_types.h"
 
@@ -16,7 +16,10 @@ typedef struct {
 
 bool initialize();
 
-bool seek_routes(http_request_method method, http_request request);
+bool seek_routes(
+    http_request_method method, 
+    http_request request
+);
 
 #endif
 

@@ -10,9 +10,9 @@ typedef enum {
     TYPE_GET,
     TYPE_POST,
     TYPE_PUT,
-    TYPE_DELETE,
-    TYPE_NULL,
-    TYPE_COUNT // sentinel.
+    TYPE_DELETE, 
+    TYPE_COUNT, // sentinel
+    TYPE_NULL
 } http_request_method;
 
 typedef struct { 
