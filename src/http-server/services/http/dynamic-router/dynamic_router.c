@@ -31,6 +31,7 @@ static bool _allocate_routes() {
     return true;
 }
 
+// add a new route to table with hash for lookup.
 bool bind_route(
     http_request_method method,
     size_t path_size,
@@ -67,7 +68,7 @@ bool bind_route(
     };
     memcpy(configured_routes[num_routes]->path, path, path_size);
     if(configured_routes[num_routes] == NULL) {
-        ERROR_LOG("bind_route: Failed to copy path into configured route.");
+        ERROR_LOG("bind_route: Failed to copy path into configured route at index [%zu].\n", num_routes);
         return false;
     } 
 
@@ -75,6 +76,8 @@ bool bind_route(
     return true;
 }
 
+// invoke route function.
+// if num_routes < 10 linear search, else hash lookup.
 bool invoke_route(http_request request) {
     if(!initialized) {
         ERROR_LOG("invoke_route: Router has not been initialized.");

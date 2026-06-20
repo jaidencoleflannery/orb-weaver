@@ -4,6 +4,7 @@
 #include "types/http-types/http_types.h"
 
 typedef struct {
+    
     http_request_method method;
     size_t path_size;
     char path[];
