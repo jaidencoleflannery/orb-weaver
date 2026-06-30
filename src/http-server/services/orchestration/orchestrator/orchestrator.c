@@ -19,7 +19,7 @@
 /*
  * orchestrator adds to a task queue via a multiplex cycle. 
  * the queue is then processed fifo by thread_handler.
- */
+*/
 
 static int event_queue;
 
