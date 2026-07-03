@@ -15,7 +15,7 @@ static route_metadata **configured_routes;
 static size_t num_routes = 0;
 static size_t max_num_routes = 0;
 
-static bool _allocate_routes() {
+static bool _initialize_routes() {
     max_num_routes = config.max_num_routes;
     if(max_num_routes < 1) {
         ERROR_LOG("initialize: Maximum number of routes must be a positive integer.");
@@ -28,11 +28,6 @@ static bool _allocate_routes() {
         return false;
     }
 
-    return true;
-}
-
-// initialize all found routes.
-static bool _initialize_routes() {
     return true;
 }
 
@@ -93,12 +88,10 @@ bool invoke_route(http_request request) {
 }
 
 bool initialize() {
-    if(!_allocate_routes()) {
+    if(!_initialize_routes()) {
         ERROR_LOG("initialize: Failed to bind routes.");
         return false;
     }
-
-    if(!)
 
     initialized = true;
     return true;

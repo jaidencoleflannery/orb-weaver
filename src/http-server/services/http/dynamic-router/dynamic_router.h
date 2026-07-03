@@ -3,6 +3,9 @@
 
 #include "types/http-types/http_types.h"
 
+#define ROUTE_FOLDER "routes"
+#define READ_ONLY "r"
+
 typedef struct {
     http_request_method method;
     size_t path_size;
