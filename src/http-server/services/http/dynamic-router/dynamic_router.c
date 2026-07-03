@@ -31,6 +31,11 @@ static bool _allocate_routes() {
     return true;
 }
 
+// initialize all found routes.
+static bool _initialize_routes() {
+    return true;
+}
+
 // add a new route to table with hash for lookup.
 bool bind_route(
     http_request_method method,
@@ -92,6 +97,8 @@ bool initialize() {
         ERROR_LOG("initialize: Failed to bind routes.");
         return false;
     }
+
+    if(!)
 
     initialized = true;
     return true;

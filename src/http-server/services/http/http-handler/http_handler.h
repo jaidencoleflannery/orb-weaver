@@ -12,6 +12,7 @@ typedef struct {
 } method_entry;
 
 // for header parsing.
+// changes to this enum can break validation logic.
 typedef enum {
     IS_KEY,
     IS_ASSIGNING,

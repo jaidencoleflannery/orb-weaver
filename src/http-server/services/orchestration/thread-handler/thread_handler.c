@@ -20,7 +20,7 @@ static thread_instance *threads; // holds all threads contiguously.
 static pthread_mutex_t thread_lock;
 static pthread_cond_t thread_lock_available;
 static pthread_mutex_t enqueue_lock;
-static connection_instance *queue_head; // linked list of connections < seems like this wasnt used, consider removing.
+static connection_instance *queue_head;
 static connection_instance **queue_tail = &queue_head;
 static int count = 0;
 
@@ -30,7 +30,7 @@ static int count = 0;
  * whichever threads holds the mutex is waiting for a connection to arrive in the queue, 
  * once a connection arrives, it drops the mutex and starts processing that connection.
  * all other threads wait for the mutex to become available, and repeat the aforementioned behavior. 
- */
+*/
 
 bool enqueue_task(int client_descriptor) {
     if(!initialized) {
@@ -112,7 +112,7 @@ static bool process_request(int socket_descriptor) {
     size_t total_bytes_read = 0;
     while(1) {
         size_t num_bytes_read = 0;
-        memset(child_buffer, 0, RECEIVE_BUFFER_SIZE);
+        memset(child_buffer, 0, RECEIVE_BUFFER_SIZE); // this is not a dupe 0 init.
         if(!receive_data(socket_descriptor, 0, (RECEIVE_BUFFER_SIZE - 2), child_buffer, &num_bytes_read)) {
             ERROR_LOG("process_request: Failed to receive data.");
             return false;
