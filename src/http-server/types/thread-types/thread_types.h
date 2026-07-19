@@ -7,7 +7,7 @@ typedef struct thread {
 } thread_instance;
 
 typedef struct connection {
-    size_t socket_descriptor;
+    int socket_descriptor;
     struct connection *next;
     struct connection *previous;
 } connection_instance;

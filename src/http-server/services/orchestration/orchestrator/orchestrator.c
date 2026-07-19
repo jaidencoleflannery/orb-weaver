@@ -11,7 +11,7 @@
 #include "services/orchestration/thread-handler/thread_handler.h"
 #include "services/tcp/host-resolver/host_resolver.h"
 #include "services/tcp/connection-handler/connection_handler.h"
-#include "configuration/configuration-handler/configuration_handler.h"
+#include "configuration/parsers/configuration-handler/configuration_handler.h"
 #include "utilities/error-handler/error_handler.h"
 
 #include "./orchestrator.h"
