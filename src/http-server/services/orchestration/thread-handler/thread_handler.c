@@ -4,6 +4,7 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
 
 #include "types/thread-types/thread_types.h"
 #include "services/logging/logging.h"
@@ -13,8 +14,6 @@
 #include "services/http/http-handler/http_handler.h"
 
 #include "./thread_handler.h"
-
-static bool initialized = false;
 
 static thread_instance *threads; // holds all threads contiguously.
 static pthread_mutex_t thread_lock;
@@ -34,12 +33,13 @@ static int num_connections = 0;
 
 bool enqueue_task(int client_descriptor) { 
     // enqueue_task is not multi-threaded, this is just to guarantee safety + delay for observers.
-    pthread_mutex_lock(&enqueue_lock); 
+    pthread_mutex_lock(&enqueue_lock);
     DEBUG_LOG("enqueue_task: Queuing task.");
 
     (*queue_tail)->next = calloc(1, sizeof(connection_instance));
     if((*queue_tail)->next == NULL) {
         ERROR_LOG("enqueue_task: Failed to allocate memory for task.");
+        pthread_mutex_unlock(&enqueue_lock);
         return false;
     }
 
@@ -47,14 +47,15 @@ bool enqueue_task(int client_descriptor) {
 
     (*queue_tail)->next->previous = *queue_tail;
     queue_tail = &(*queue_tail)->next;
-    (*queue_tail)->socket_descriptor = client_descriptor;
+    (*queue_tail)->socket_descriptor = client_descriptor; 
 
-    pthread_cond_signal(&thread_lock_available);
-
+    // this is iterated in between two locks, but due to the signal it should not be an issue.
     ++num_connections; 
-    DEBUG_LOG("enqueue_task: Task successfully queued, total tasks: %d.", num_connections);  
- 
+    DEBUG_LOG("enqueue_task: Task successfully queued, total tasks: %d.", num_connections);
+
     pthread_mutex_unlock(&enqueue_lock);
+    pthread_cond_signal(&thread_lock_available);
+  
     return true;
 }
 
@@ -65,54 +66,66 @@ bool pull_next_task(int *result) {
         return false;
     }
 
+    // enqueue can race here.
+    pthread_mutex_lock(&enqueue_lock);
+
     DEBUG_LOG("pull_next_task: Attempting to pull task from queue.");
 
     connection_instance *task = queue_head->next;
     if(task == NULL) {
         ERROR_LOG("pull_next_task: Failure, no task found.");
+        pthread_mutex_unlock(&enqueue_lock);
         return false;
     }
 
     *result = task->socket_descriptor;
     if(result == NULL || *result < 0) {
-        ERROR_LOG("pull_next_task: Failure, socket descriptor in queue was invalid.");
-        *result = -1;
-        return false;
+        ERROR_LOG("pull_next_task: Failure, socket descriptor in queue was invalid, clearing task from queue.");
+        *result = -1; // pop + free node and return a placeholder node.
     }
 
     // pop node.
-    if(queue_head->next->socket_descriptor == (*queue_tail)->socket_descriptor) {
+    if(task == *queue_tail) {
         queue_head->next = NULL;
         queue_tail = &queue_head;
     } else {
         queue_head->next = queue_head->next->next;
         queue_head->next->previous = queue_head;
-    }
+    } 
 
-    // TODO: make sure this isn't messing up *result.
     free(task);
     --num_connections;
-    return true;
+
+    pthread_mutex_unlock(&enqueue_lock); 
+
+    return (*result != -1);
 }
 
 static bool process_request(int socket_descriptor) { 
     DEBUG_LOG("process_request: Processing request on socket: %d, thread: %lu.", socket_descriptor, (unsigned long)pthread_self());
  
-    char *buffer = calloc(1, RECEIVE_BUFFER_SIZE); // leaving room for terminator.
+    char *buffer = calloc(1, RECEIVE_BUFFER_SIZE);
+    if(buffer == NULL) {
+        ERROR_LOG("process_request: Failed to allocate memory for buffer on thread %lu.", (unsigned long)pthread_self());
+        return false;
+    }
+
     char child_buffer[RECEIVE_BUFFER_SIZE] = { 0 };
     size_t total_bytes_read = 0;
-    while(1) {
+    // header values.
+    while(!memmem(buffer, total_bytes_read, END_OF_BUFFER, END_OF_BUFFER_LENGTH)) {
         size_t num_bytes_read = 0;
         memset(child_buffer, 0, RECEIVE_BUFFER_SIZE); // in loop clear.
-        if(!receive_data(socket_descriptor, 0, (RECEIVE_BUFFER_SIZE - 2), child_buffer, &num_bytes_read)) {
+        if(!receive_data(socket_descriptor, 0, (RECEIVE_BUFFER_SIZE - 1), child_buffer, &num_bytes_read)) {
             ERROR_LOG("process_request: Failed to receive data on thread %lu.", (unsigned long)pthread_self());
+            free(buffer);
             return false;
         }
 
-        LOG("[ READ ]", "%zu bytes on thread %lu.", num_bytes_read, (unsigned long)pthread_self()); 
+        DEBUG_LOG("Read %zu header bytes on thread %lu.", num_bytes_read, (unsigned long)pthread_self()); 
 
-        if((total_bytes_read + num_bytes_read) >= RECEIVE_BUFFER_SIZE) {
-            ERROR_LOG("process_request: Request exceed maximum request size of %d on thread %lu.", RECEIVE_BUFFER_SIZE, (unsigned long)pthread_self());
+        if((total_bytes_read + num_bytes_read) > MAX_HEADER_SIZE || (total_bytes_read + num_bytes_read) >= RECEIVE_BUFFER_SIZE) {
+            ERROR_LOG("process_request: Failure, request header exceeded maximum memory capacity on thread %lu.", (unsigned long)pthread_self());
             free(buffer);
             return false;
         }
@@ -122,29 +135,77 @@ static bool process_request(int socket_descriptor) {
 
         // end of data.
         if(num_bytes_read < 1) {
-            DEBUG_LOG("process_request: Hit end of message on thread %lu.", (unsigned long)pthread_self());
+            DEBUG_LOG("process_request: Connection was closed on thread %lu.", (unsigned long)pthread_self());
+            free(buffer);
+            return false;
+        }
+    }
+
+    char *content_length_header = strstr(buffer, CONTENT_LENGTH_HEADER);
+    if(content_length_header == NULL) {
+        ERROR_LOG("process_request: Invalid data, no content length header was found while processing on thread %lu.", (unsigned long)pthread_self());
+        free(buffer);
+        return false;
+    }
+
+    size_t content_length = strtoul((content_length_header + CONTENT_LENGTH_HEADER_LENGTH), NULL, 10);
+    if(content_length == 0) {
+        ERROR_LOG("process_request: Invalid data, content length could not be parsed on thread %lu. Error: %s", (unsigned long)pthread_self(), strerror(errno));
+        free(buffer);
+        return false;
+    }
+
+    // body contents.
+    size_t num_body_bytes_read = 0;
+    int receive_buffer_size = RECEIVE_BUFFER_SIZE;
+    while(num_body_bytes_read < content_length) {
+        memset(child_buffer, 0, RECEIVE_BUFFER_SIZE); // in loop clear.
+
+        if((content_length - num_body_bytes_read) < receive_buffer_size)
+            receive_buffer_size = content_length - num_body_bytes_read;
+
+        if(!receive_data(socket_descriptor, 0, (receive_buffer_size - 1), child_buffer, &num_body_bytes_read)) {
+            ERROR_LOG("process_request: Failed to receive data on thread %lu.", (unsigned long)pthread_self());
+            free(buffer);
+            return false;
+        }
+
+        DEBUG_LOG("Read %zu bytes on thread %lu.", num_body_bytes_read, (unsigned long)pthread_self()); 
+
+        if((total_bytes_read + num_body_bytes_read) >= receive_buffer_size) {
+            ERROR_LOG("process_request: Failure, request body exceeded maximum size of %d on thread %lu.", receive_buffer_size, (unsigned long)pthread_self());
+            free(buffer);
+            return false;
+        }
+
+        memcpy((buffer + total_bytes_read), child_buffer, num_body_bytes_read);
+        total_bytes_read += num_body_bytes_read;
+
+        // end of data.
+        if(num_body_bytes_read < 1) {
+            DEBUG_LOG("process_request: Connection was closed on thread %lu.", (unsigned long)pthread_self());
             break;
         }
     }
 
-    buffer[RECEIVE_BUFFER_SIZE - 1] = '\0';
-
     char *response_buffer = calloc(64, sizeof(char));
     if(response_buffer == NULL) {
-        ERROR_LOG("process_request: Failed to allocate memory for response buffer.");
+        ERROR_LOG("process_request: Failed to allocate memory for response buffer on thread %lu.", (unsigned long)pthread_self());
         free(response_buffer);
         free(buffer);
         return false;
     }
 
     if(!process_http_request(socket_descriptor, buffer, RECEIVE_BUFFER_SIZE, &response_buffer)) {
-        ERROR_LOG("process_request: Failed to invoke response.");
+        ERROR_LOG("process_request: Failed to invoke response on thread %lu.", (unsigned long)pthread_self());
         free(response_buffer);
         free(buffer);
         return false;
     }
 
-    LOG("[ RESPONSE ]", "%s\n", response_buffer);
+    // TODO: this needs to actually send the response back to the client.
+    // this is a debug value, should be wholly removed.
+    DEBUG_LOG("Response: {\n %s \n}.", response_buffer);
 
     free(response_buffer);
     free(buffer);
@@ -153,18 +214,13 @@ static bool process_request(int socket_descriptor) {
 }
 
 static void *thread_runner(void *client_descriptor) {
-    if(!initialized) {
-        ERROR_LOG("pull_next_task: Service has not been initialized, error encountered on thread %lu.", (unsigned long)pthread_self());
-        return false;
-    }
-
     DEBUG_LOG("thread_runner: Thread %lu is waiting for a connection to join the queue.", (unsigned long)pthread_self());
 
     while(1) {
-        pthread_mutex_lock(&thread_lock); 
+        pthread_mutex_lock(&thread_lock);
 
         while(num_connections == 0) {
-            DEBUG_LOG("thread_runner: Thread %lu found no active events, blocking on mutex.", (unsigned long)pthread_self());
+            DEBUG_LOG("thread_runner: Thread %lu found no active events, waiting on signal.", (unsigned long)pthread_self());
             pthread_cond_wait(&thread_lock_available, &thread_lock);
         }
 
@@ -190,13 +246,17 @@ static void *thread_runner(void *client_descriptor) {
             continue;
         }
 
-        free(socket_descriptor);
+        close(*socket_descriptor);
+        free(socket_descriptor); 
     }
 
     return NULL;
 }
 
-// thread pool is a linked list of threads.
+/*
+ * thread pool is a linked list of threads.
+ * each thread sits on the task queue and waits for a task to be enqueued.
+*/
 bool init_thread_handler(void) {
     DEBUG_LOG("init_thread_handler: Initializing thread handler service.");
 
@@ -216,13 +276,10 @@ bool init_thread_handler(void) {
         return false;
     }
 
-    initialized = true;
-
     // prealloc pool based on num of performance cores.
     threads = calloc(1, (config.num_cores * sizeof(thread_instance)));
     if(threads == NULL) {
         ERROR_LOG("init_thread_handler: Fatal error, failed to allocate memory for thread pool.");
-        initialized = false;
         return false;
     }
 
@@ -238,14 +295,10 @@ bool init_thread_handler(void) {
             pthread_create(&(threads + cursor)->thread_id, NULL, thread_runner, NULL),
             "init_thread_handler",
             "Could not create a thread for processing.")
-        ) { 
-            initialized = false;
-            return false; 
-        }
+        ) { return false; }
 
         if((threads + cursor)->thread_id == (pthread_t)-1) {
             ERROR_LOG("init_thread_handler: Fatal error, failed to create thread.");
-            initialized = false;
             return false; 
         }
     }
@@ -254,7 +307,6 @@ bool init_thread_handler(void) {
     queue_head = (connection_instance *)calloc(1, sizeof(connection_instance));
     if(queue_head == NULL) {
         ERROR_LOG("init_thread_handler: Failed to allocate memory for queue.");
-        initialized = false;
         return false;
     }
 
