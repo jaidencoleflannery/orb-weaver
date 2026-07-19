@@ -130,15 +130,15 @@ static bool process_request(int socket_descriptor) {
             return false;
         }
 
-        memcpy((buffer + total_bytes_read), header_buffer, num_bytes_read);
-        total_bytes_read += num_bytes_read;
-
         // end of data.
         if(num_bytes_read < 1) {
             DEBUG_LOG("process_request: Connection was closed on thread %lu.", (unsigned long)pthread_self());
             free(buffer);
             return false;
         }
+
+        memcpy((buffer + total_bytes_read), header_buffer, num_bytes_read);
+        total_bytes_read += num_bytes_read; 
     }
 
     char *content_length_header = strstr(buffer, CONTENT_LENGTH_HEADER);
@@ -149,68 +149,63 @@ static bool process_request(int socket_descriptor) {
     }
 
     size_t content_length = strtoul((content_length_header + CONTENT_LENGTH_HEADER_LENGTH), NULL, 10);
-    if(content_length == 0) {
+    if(content_length == 0 && errno == EINVAL) {
         ERROR_LOG("process_request: Invalid data, content length could not be parsed on thread %lu. Error: %s", (unsigned long)pthread_self(), strerror(errno));
         free(buffer);
         return false;
     }
 
     // body contents.
-    char body_buffer[RECEIVE_BUFFER_SIZE] = { 0 };
-    int receive_buffer_size = RECEIVE_BUFFER_SIZE;
-    while(total_bytes_read < content_length) {
-        size_t num_bytes_read = 0;
-        memset(body_buffer, 0, RECEIVE_BUFFER_SIZE); // in loop clear.
+    if(content_length > 0) {
+        char body_buffer[RECEIVE_BUFFER_SIZE] = { 0 };
+        int receive_buffer_size = RECEIVE_BUFFER_SIZE;
+        size_t body_bytes_read = 0;
+        while(body_bytes_read < content_length) {
+            size_t num_bytes_read = 0;
+            memset(body_buffer, 0, RECEIVE_BUFFER_SIZE); // in loop clear.
 
-        if((content_length - num_bytes_read) < receive_buffer_size)
-            receive_buffer_size = content_length - num_bytes_read;
+            if((content_length - body_bytes_read) < receive_buffer_size)
+                receive_buffer_size = content_length - body_bytes_read;
 
-        if(!receive_data(socket_descriptor, 0, (receive_buffer_size - 1), body_buffer, &num_bytes_read)) {
-            ERROR_LOG("process_request: Failed to receive data on thread %lu.", (unsigned long)pthread_self());
-            free(buffer);
-            return false;
-        }
+            if(!receive_data(socket_descriptor, 0, (receive_buffer_size - 1), body_buffer, &num_bytes_read)) {
+                ERROR_LOG("process_request: Failed to receive data on thread %lu.", (unsigned long)pthread_self());
+                free(buffer);
+                return false;
+            }
 
-        DEBUG_LOG("Read %zu bytes on thread %lu.", num_bytes_read, (unsigned long)pthread_self()); 
+            DEBUG_LOG("Read %zu bytes on thread %lu.", num_bytes_read, (unsigned long)pthread_self()); 
 
-        if((total_bytes_read + num_bytes_read) >= RECEIVE_BUFFER_SIZE) {
-            ERROR_LOG("process_request: Failure, request body exceeded maximum size of %d on thread %lu.", receive_buffer_size, (unsigned long)pthread_self());
-            free(buffer);
-            return false;
-        }
+            if((total_bytes_read + num_bytes_read) >= RECEIVE_BUFFER_SIZE) {
+                ERROR_LOG("process_request: Failure, request body exceeded maximum size of %d on thread %lu.", receive_buffer_size, (unsigned long)pthread_self());
+                free(buffer);
+                return false;
+            }
 
-        memcpy((buffer + total_bytes_read), body_buffer, num_bytes_read);
-        total_bytes_read += num_bytes_read;
+            // end of data.
+            if(num_bytes_read < 1) {
+                DEBUG_LOG("process_request: Connection was closed on thread %lu.", (unsigned long)pthread_self());
+                break;
+            }
 
-        // end of data.
-        if(num_bytes_read < 1) {
-            DEBUG_LOG("process_request: Connection was closed on thread %lu.", (unsigned long)pthread_self());
-            break;
+            memcpy((buffer + total_bytes_read), body_buffer, num_bytes_read);
+            total_bytes_read += num_bytes_read;
+            body_bytes_read += num_bytes_read; 
         }
     }
 
-    char *response_buffer = calloc(64, sizeof(char));
-    if(response_buffer == NULL) {
-        ERROR_LOG("process_request: Failed to allocate memory for response buffer on thread %lu.", (unsigned long)pthread_self());
-        free(response_buffer);
-        free(buffer);
-        return false;
-    }
-
-    if(!process_http_request(socket_descriptor, buffer, RECEIVE_BUFFER_SIZE, &response_buffer)) {
+    char **response_buffer = NULL;
+    if(!process_http_request(socket_descriptor, buffer, total_bytes_read, response_buffer)) {
         ERROR_LOG("process_request: Failed to invoke response on thread %lu.", (unsigned long)pthread_self());
-        free(response_buffer);
         free(buffer);
         return false;
     }
 
     // TODO: this needs to actually send the response back to the client.
     // this is a debug value, should be wholly removed.
-    DEBUG_LOG("Response: {\n %s \n}.", response_buffer);
+    // for sending values, loop over the entire payload and write() to the socket descriptor in chunks (the kernel or nic handles packet segmentation).
+    DEBUG_LOG("Response: {\n %s \n}.", *response_buffer);
 
-    free(response_buffer);
     free(buffer);
-
     return true;
 }
 
