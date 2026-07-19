@@ -10,6 +10,8 @@
 
 #include "./host_resolver.h"
 
+// find what ip addresses will be best for binding (for a personal machine, this will just be two addresses, ipv4 and ipv6)
+// this really just quickly fills out the struct with local information for binding.
 bool get_local_addresses(bool is_https, addrinfo **address_list) { 
     DEBUG_LOG("get_local_addresses: Searching for local addresses.");
 
@@ -24,7 +26,7 @@ bool get_local_addresses(bool is_https, addrinfo **address_list) {
     if(!size_t_to_string(config.port, port_string)) {
         ERROR_LOG("get_local_addresses: Error converting port into a string.");
         return false;
-    } 
+    }
 
     int status;
     // cannot use validate_syscall here due to differing errno type.

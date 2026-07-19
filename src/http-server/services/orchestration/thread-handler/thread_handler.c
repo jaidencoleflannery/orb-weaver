@@ -22,7 +22,7 @@ static pthread_cond_t thread_lock_available;
 static pthread_mutex_t enqueue_lock;
 static connection_instance *queue_head;
 static connection_instance **queue_tail = &queue_head;
-static int count = 0;
+static int num_connections = 0;
 
 /*
  * thread_handler implements the producer consumer pattern.
@@ -55,8 +55,8 @@ bool enqueue_task(int client_descriptor) {
     queue_tail = &(*queue_tail)->next;
     (*queue_tail)->socket_descriptor = client_descriptor;
 
-    ++count; 
-    DEBUG_LOG("enqueue_task: Task successfully queued, total tasks: %d.", count); 
+    ++num_connections; 
+    DEBUG_LOG("enqueue_task: Task successfully queued, total tasks: %d.", num_connections); 
  
     pthread_mutex_unlock(&enqueue_lock);
     return true;
@@ -95,7 +95,7 @@ bool pull_next_task(int *result) {
 
     // TODO: make sure this isn't messing up *result.
     free(task);
-    --count;
+    --num_connections;
     return true;
 }
 
@@ -123,7 +123,7 @@ static bool process_request(int socket_descriptor) {
         if((total_bytes_read + num_bytes_read) >= RECEIVE_BUFFER_SIZE) {
             ERROR_LOG("process_request: Request exceed maximum request size of %d.", RECEIVE_BUFFER_SIZE);
             return false;
-        } 
+        }
 
         *(buffer + total_bytes_read) = *child_buffer;
         total_bytes_read += num_bytes_read;
@@ -148,12 +148,12 @@ static bool process_request(int socket_descriptor) {
 }
 
 static void *thread_runner(void *client_descriptor) {
-    DEBUG_LOG("thread_runner: Waiting for a connection to join the queue.");
+    DEBUG_LOG("thread_runner: Thread %lu is waiting for a connection to join the queue.", (unsigned long)pthread_self());
 
-    while(1) { 
+    while(1) {
         pthread_mutex_lock(&thread_lock); 
 
-        while(count == 0) {
+        while(num_connections == 0) {
             DEBUG_LOG("thread_runner: Hit thread condition.");
             pthread_cond_wait(&thread_lock_available, &thread_lock);
         }
@@ -199,7 +199,7 @@ bool init_thread_handler(void) {
     if(pthread_cond_init(&thread_lock_available, NULL) != 0) {
         ERROR_LOG("init_thread_handler: Fatal error, failed to initialize thread mutex condition.");
         return false;
-    } 
+    }
 
     // prealloc pool based on num of performance cores.
     threads = calloc(1, (config.num_cores * sizeof(thread_instance)));
@@ -210,9 +210,10 @@ bool init_thread_handler(void) {
 
     // start threads and track values.
     for(int cursor = 0; cursor < config.num_cores; cursor++) {
+        // TODO: this seems wasteful, remove?
         *(threads + cursor) = (thread_instance){
             .virtual_id = cursor,
-            .thread_id = (pthread_t)-1 // the actual thread's id. 
+            .thread_id = (pthread_t)-1 // the actual thread's id.
         };
 
         if(!validate_syscall(

@@ -152,17 +152,20 @@ bool initialize_configuration(void) {
     if(!validate_syscall(
         sysctlbyname("hw.perflevel0.physicalcpu", num_cores, &(size_t){ sizeof(*num_cores) }, 0, 0), 
         "initialize_configuration", 
-        "Failed to fetch number of performance cores on current machine.") 
-    )
-        return false;
+        "Failed to fetch number of performance cores on current machine."))
+            return false;
 
     if(*num_cores < 0) {
         ERROR_LOG("Failed to fetch number of performance cores on current machine.");
         return false;
     }
 
-    config.num_cores = (size_t)*num_cores - 1; // leave one off so the system isn't fully exhausted.
-    DEBUG_LOG("initialize_configuration: Read configuration.\nmax_connections: %zu.\n port: %zu.\nnum_cores: %zu.\nmax_num_routes: %zu.\n", 
+    config.num_cores = (size_t)*num_cores;
+    DEBUG_LOG("initialize_configuration: Read configuration.\n"
+        "max_connections: %zu.\n"
+        "port: %zu.\n"
+        "num_cores: %zu.\n"
+        "max_num_routes: %zu.\n",
         config.max_connections, 
         config.port, 
         config.num_cores,
