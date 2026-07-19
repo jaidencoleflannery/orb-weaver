@@ -34,7 +34,7 @@ static int num_connections = 0;
 bool enqueue_task(int client_descriptor) { 
     // enqueue_task is not multi-threaded, this is just to guarantee safety + delay for observers.
     pthread_mutex_lock(&enqueue_lock);
-    DEBUG_LOG("enqueue_task: Queuing task.");
+    DEBUG_LOG("enqueue_task: Enqueuing task %d.", client_descriptor);
 
     (*queue_tail)->next = calloc(1, sizeof(connection_instance));
     if((*queue_tail)->next == NULL) {
@@ -116,6 +116,7 @@ static bool process_request(int socket_descriptor) {
     while(!memmem(buffer, total_bytes_read, END_OF_BUFFER, END_OF_BUFFER_LENGTH)) {
         size_t num_bytes_read = 0;
         memset(header_buffer, 0, MAX_HEADER_SIZE); // in loop clear.
+        DEBUG_LOG("process_request: Attempting to process data from socket: %d.", socket_descriptor);
         if(!receive_data(socket_descriptor, 0, (MAX_HEADER_SIZE - 1), header_buffer, &num_bytes_read)) {
             ERROR_LOG("process_request: Failed to receive data on thread %lu.", (unsigned long)pthread_self());
             free(buffer);
@@ -194,6 +195,7 @@ static bool process_request(int socket_descriptor) {
     }
 
     char **response_buffer = NULL;
+    DEBUG_LOG("CHECKPOINT REACHED.");
     if(!process_http_request(socket_descriptor, buffer, total_bytes_read, response_buffer)) {
         ERROR_LOG("process_request: Failed to invoke response on thread %lu.", (unsigned long)pthread_self());
         free(buffer);
@@ -209,7 +211,7 @@ static bool process_request(int socket_descriptor) {
     return true;
 }
 
-static void *thread_runner(void *client_descriptor) {
+static void *thread_runner(void *arg) {
     DEBUG_LOG("thread_runner: Thread %lu is waiting for a connection to join the queue.", (unsigned long)pthread_self());
 
     while(1) {
@@ -235,6 +237,7 @@ static void *thread_runner(void *client_descriptor) {
         pthread_mutex_unlock(&thread_lock);
         DEBUG_LOG("thread_runner: Released lock on thread %lu.", (unsigned long)pthread_self());
         
+        DEBUG_LOG("thread_runner: Processing task %d.", *socket_descriptor);
         if(!process_request(*socket_descriptor)) {
             ERROR_LOG("thread_runner: Unable to process request on thread %lu.", (unsigned long)pthread_self());
             close(*socket_descriptor);

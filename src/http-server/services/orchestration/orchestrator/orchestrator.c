@@ -23,6 +23,30 @@
 
 static int event_queue;
 
+// + reenable event after processing.
+// this is called from within the handler thread.
+bool enable_event(unsigned long *socket_descriptor) {
+    struct kevent change;
+    struct kevent receipt;
+
+    EV_SET(&change, socket_descriptor, EVFILT_READ, EV_ENABLE | EV_RECEIPT, 0, 0, NULL);
+
+    int result = kevent(event_queue, &change, 1, &receipt, 1, NULL);
+    if(!validate_syscall(
+        result,
+        "enable_event",
+        "Failed to enable event on multiplexer."
+    )) { return false; }
+
+    if(!validate_syscall(
+        receipt.data,
+        "enable_event",
+        "Failed to enable event on multiplexer, receipt suggests an error occured."
+    )) { return false; }
+
+    return true;
+}
+
 // + add new connections to kqueue.
 // + listen for data events on existing connections and process.
 static bool poll_events(int socket_descriptor) {
@@ -46,58 +70,36 @@ static bool poll_events(int socket_descriptor) {
      
                 if((int)event.ident == socket_descriptor) {
                     // new connection.
-                    DEBUG_LOG("poll_events: New connection event."); 
+                    DEBUG_LOG("poll_events: New connection event.");  
 
-                    int *client_descriptor = calloc(1, sizeof(int));
-                    if(client_descriptor == NULL) {
-                        ERROR_LOG("poll_events: Failed to allocate memory for client_descriptor.");
-                        return false;
-                    }
+                    int client_descriptor = -1;
 
-                    *client_descriptor = -1;
-
-                    if(!accept_connection(client_address, client_descriptor)) {
+                    if(!accept_connection(client_address, &client_descriptor)) {
                         ERROR_LOG("poll_events: Failed to accept connection.");
-                        free(client_descriptor);
                         continue;
                     }
 
-                    if(*client_descriptor == -1) {
-                        ERROR_LOG("poll_events: The stack variable client_descriptor was not properly set when the connection was accepted.");
-                        free(client_descriptor);
+                    if(client_descriptor == -1) {
+                        // no need to close connection here.
+                        ERROR_LOG("poll_events: The stack variable client_descriptor was not properly set when the connection was accepted."); 
                         continue; // skip the connection; this should never happen.
                     }
 
                     // add new connection to queue.
                     struct kevent client_event;
-                    EV_SET(&client_event, *client_descriptor, EVFILT_READ, EV_ADD | EV_ONESHOT, 0, 0, client_descriptor);
+                    // TODO: add metadata to event.ident here for future use.
+                    EV_SET(&client_event, client_descriptor, EVFILT_READ, EV_ADD | EV_DISPATCH, 0, 0, NULL);
                     if(!validate_syscall(
                         kevent(event_queue, &client_event, 1, NULL, 0, NULL),
                         "poll_events",
                         "Failed to add event for new connection.")
-                    ) {
-                        free(client_descriptor);
-                        continue; 
-                    }
+                    ) { continue; }
 
-                    free(client_descriptor);
-
-                } else if(event.flags & EV_EOF) {
-                    // connection dropped.
-                    DEBUG_LOG("poll_events: Dropped connection event.");
-
-                    struct kevent client_event;
-                    EV_SET(&client_event, event.ident, EVFILT_READ, EV_DELETE, 0, 0, NULL);
-                    validate_syscall(
-                        kevent(event_queue, &client_event, 1, NULL, 0, NULL),
-                        "poll_events",
-                        "Failed to delete subscription from kqueue."
-                    );
-
-                    close(event.ident);
                 } else {
                     // connection received data, add to task queue so a thread can process.
                     DEBUG_LOG("poll_events: Data event received.");
+ 
+                    bool status_flag = true; // indicates if the process failed.
 
                     int current_descriptor = *(int *)event.udata;
                     if(current_descriptor < 0) {
@@ -105,9 +107,29 @@ static bool poll_events(int socket_descriptor) {
                         return false;
                     }
 
+                    DEBUG_LOG("poll_events: Enqueueing task %d.", current_descriptor);
+
                     if(!enqueue_task(current_descriptor)) {
                         ERROR_LOG("poll_events: Fatal error, unable to add connection to thread queue.");
-                        return false;
+                        status_flag = false;
+                    }
+
+                    if(event.flags & EV_EOF) {
+                        // connection dropped.
+                        DEBUG_LOG("poll_events: Dropped connection event.");
+
+                        struct kevent client_event;
+                        EV_SET(&client_event, event.ident, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+                        validate_syscall(
+                            kevent(event_queue, &client_event, 1, NULL, 0, NULL),
+                            "poll_events",
+                            "Failed to delete subscription from kqueue."
+                        );
+
+                        if(!validate_syscall(event.ident, "pull_events", "Failed to close connection.")) {
+                            DEBUG_LOG("close_connection: Error, unable to close connection for: %lu.", event.ident);
+                            continue;
+                        };
                     }
                 }
             }

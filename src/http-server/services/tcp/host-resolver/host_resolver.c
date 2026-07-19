@@ -5,7 +5,7 @@
 
 #include "types/address-types/address_types.h"
 #include "services/logging/logging.h"
-#include "configuration/configuration-handler/configuration_handler.h"
+#include "configuration/parsers/configuration-handler/configuration_handler.h"
 #include "utilities/string-tools/string_tools.h"
 
 #include "./host_resolver.h"

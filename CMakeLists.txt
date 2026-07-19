@@ -10,13 +10,15 @@ project(
 
 add_library(
     server
-    ./src/http-server/services/tcp/host-resolver/host_resolver.c
-    ./src/http-server/services/tcp/connection-handler/connection_handler.c
-    ./src/http-server/utilities/string-tools/string_tools.c 
-    ./src/http-server/configuration/configuration-handler/configuration_handler.c
     ./src/http-server/services/orchestration/orchestrator/orchestrator.c
-    ./src/http-server/utilities/error-handler/error_handler.c
     ./src/http-server/services/orchestration/thread-handler/thread_handler.c
+    ./src/http-server/services/http/http-handler/http_handler.c
+    ./src/http-server/services/tcp/host-resolver/host_resolver.c
+    ./src/http-server/services/tcp/connection-handler/connection_handler.c 
+    ./src/http-server/types/http-types/http_types.c
+    ./src/http-server/configuration/parsers/configuration-handler/configuration_handler.c
+    ./src/http-server/utilities/string-tools/string_tools.c 
+    ./src/http-server/utilities/error-handler/error_handler.c
 )
 
 add_executable(

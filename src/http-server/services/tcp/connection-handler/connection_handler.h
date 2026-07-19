@@ -13,4 +13,6 @@ bool get_host_name(char *result, size_t result_size);
 
 bool accept_connection(struct sockaddr_storage *address, int *client_descriptor);
 
+bool close_connection(int *client_descriptor);
+
 #endif

@@ -6,7 +6,7 @@
 
 #include "types/address-types/address_types.h"
 #include "services/logging/logging.h"
-#include "configuration/configuration-handler/configuration_handler.h"
+#include "configuration/parsers/configuration-handler/configuration_handler.h"
 #include "utilities/error-handler/error_handler.h"
 
 #include "./connection_handler.h"
@@ -108,6 +108,7 @@ bool shutdown_connection(int file_descriptor, int type) {
 
 bool accept_connection(sockaddr_storage *address, int *client_descriptor) {
     DEBUG_LOG("accept_connection: Attempting to accept connection.");
+
     *client_descriptor = accept(socket_descriptor, (sockaddr *)address, &(socklen_t){ sizeof(sockaddr_storage) });
     if(!validate_syscall(*client_descriptor, "accept_connection", "Listening file descriptor did not give any data.")) {
         DEBUG_LOG("accept_connection: Error, client_descriptor was set to: %d.", *client_descriptor);
@@ -115,7 +116,20 @@ bool accept_connection(sockaddr_storage *address, int *client_descriptor) {
         return false;
     }
 
-    DEBUG_LOG("accept_connection: Successfully accepted connection.");
+    DEBUG_LOG("accept_connection: Successfully accepted connection for %d.", *client_descriptor);
+    return true;
+}
+
+bool close_connection(int *client_descriptor) {
+    DEBUG_LOG("close_connection: Attempting to close connection %d.", *client_descriptor);
+
+    int close_status = close(socket_descriptor);
+    if(!validate_syscall(*client_descriptor, "close_connection", "Listening file descriptor did not give any data.")) {
+        DEBUG_LOG("close_connection: Error, unable to close connection for: %d.", *client_descriptor);
+        return false;
+    }
+
+    DEBUG_LOG("close_connection: Successfully closed connection for %d.", *client_descriptor);
     return true;
 }
 
