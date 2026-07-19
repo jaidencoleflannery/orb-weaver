@@ -110,13 +110,13 @@ static bool process_request(int socket_descriptor) {
         return false;
     }
 
-    char child_buffer[RECEIVE_BUFFER_SIZE] = { 0 };
+    char header_buffer[MAX_HEADER_SIZE] = { 0 };
     size_t total_bytes_read = 0;
     // header values.
     while(!memmem(buffer, total_bytes_read, END_OF_BUFFER, END_OF_BUFFER_LENGTH)) {
         size_t num_bytes_read = 0;
-        memset(child_buffer, 0, RECEIVE_BUFFER_SIZE); // in loop clear.
-        if(!receive_data(socket_descriptor, 0, (RECEIVE_BUFFER_SIZE - 1), child_buffer, &num_bytes_read)) {
+        memset(header_buffer, 0, MAX_HEADER_SIZE); // in loop clear.
+        if(!receive_data(socket_descriptor, 0, (MAX_HEADER_SIZE - 1), header_buffer, &num_bytes_read)) {
             ERROR_LOG("process_request: Failed to receive data on thread %lu.", (unsigned long)pthread_self());
             free(buffer);
             return false;
@@ -124,13 +124,13 @@ static bool process_request(int socket_descriptor) {
 
         DEBUG_LOG("Read %zu header bytes on thread %lu.", num_bytes_read, (unsigned long)pthread_self()); 
 
-        if((total_bytes_read + num_bytes_read) > MAX_HEADER_SIZE || (total_bytes_read + num_bytes_read) >= RECEIVE_BUFFER_SIZE) {
-            ERROR_LOG("process_request: Failure, request header exceeded maximum memory capacity on thread %lu.", (unsigned long)pthread_self());
+        if((total_bytes_read + num_bytes_read) > MAX_HEADER_SIZE) {
+            ERROR_LOG("process_request: Failure, request header exceeded maximum memory capacity of %d on thread %lu.", MAX_HEADER_SIZE, (unsigned long)pthread_self());
             free(buffer);
             return false;
         }
 
-        memcpy((buffer + total_bytes_read), child_buffer, num_bytes_read);
+        memcpy((buffer + total_bytes_read), header_buffer, num_bytes_read);
         total_bytes_read += num_bytes_read;
 
         // end of data.
@@ -156,33 +156,34 @@ static bool process_request(int socket_descriptor) {
     }
 
     // body contents.
-    size_t num_body_bytes_read = 0;
+    char body_buffer[RECEIVE_BUFFER_SIZE] = { 0 };
     int receive_buffer_size = RECEIVE_BUFFER_SIZE;
-    while(num_body_bytes_read < content_length) {
-        memset(child_buffer, 0, RECEIVE_BUFFER_SIZE); // in loop clear.
+    while(total_bytes_read < content_length) {
+        size_t num_bytes_read = 0;
+        memset(body_buffer, 0, RECEIVE_BUFFER_SIZE); // in loop clear.
 
-        if((content_length - num_body_bytes_read) < receive_buffer_size)
-            receive_buffer_size = content_length - num_body_bytes_read;
+        if((content_length - num_bytes_read) < receive_buffer_size)
+            receive_buffer_size = content_length - num_bytes_read;
 
-        if(!receive_data(socket_descriptor, 0, (receive_buffer_size - 1), child_buffer, &num_body_bytes_read)) {
+        if(!receive_data(socket_descriptor, 0, (receive_buffer_size - 1), body_buffer, &num_bytes_read)) {
             ERROR_LOG("process_request: Failed to receive data on thread %lu.", (unsigned long)pthread_self());
             free(buffer);
             return false;
         }
 
-        DEBUG_LOG("Read %zu bytes on thread %lu.", num_body_bytes_read, (unsigned long)pthread_self()); 
+        DEBUG_LOG("Read %zu bytes on thread %lu.", num_bytes_read, (unsigned long)pthread_self()); 
 
-        if((total_bytes_read + num_body_bytes_read) >= receive_buffer_size) {
+        if((total_bytes_read + num_bytes_read) >= RECEIVE_BUFFER_SIZE) {
             ERROR_LOG("process_request: Failure, request body exceeded maximum size of %d on thread %lu.", receive_buffer_size, (unsigned long)pthread_self());
             free(buffer);
             return false;
         }
 
-        memcpy((buffer + total_bytes_read), child_buffer, num_body_bytes_read);
-        total_bytes_read += num_body_bytes_read;
+        memcpy((buffer + total_bytes_read), body_buffer, num_bytes_read);
+        total_bytes_read += num_bytes_read;
 
         // end of data.
-        if(num_body_bytes_read < 1) {
+        if(num_bytes_read < 1) {
             DEBUG_LOG("process_request: Connection was closed on thread %lu.", (unsigned long)pthread_self());
             break;
         }
