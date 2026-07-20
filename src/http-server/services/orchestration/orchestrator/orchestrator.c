@@ -24,12 +24,12 @@
 static int event_queue;
 
 // + reenable event after processing.
-// this is called from within the handler thread.
+// this needs to be called from within the handler thread.
 bool enable_event(unsigned long *socket_descriptor) {
     struct kevent change;
     struct kevent receipt;
 
-    EV_SET(&change, socket_descriptor, EVFILT_READ, EV_ENABLE | EV_RECEIPT, 0, 0, NULL);
+    EV_SET(&change, *socket_descriptor, EVFILT_READ, EV_ENABLE | EV_RECEIPT, 0, 0, NULL);
 
     int result = kevent(event_queue, &change, 1, &receipt, 1, NULL);
     if(!validate_syscall(
@@ -101,13 +101,14 @@ static bool poll_events(int socket_descriptor) {
  
                     bool status_flag = true; // indicates if the process failed.
 
-                    int current_descriptor = *(int *)event.udata;
+                    DEBUG_LOG("poll_events: Attempting to touch ident.");
+                    uintptr_t current_descriptor = event.ident;
                     if(current_descriptor < 0) {
                         ERROR_LOG("poll_events: Fatal error, unable to fetch socket ID for connection to client.");
                         return false;
                     }
 
-                    DEBUG_LOG("poll_events: Enqueueing task %d.", current_descriptor);
+                    DEBUG_LOG("poll_events: Enqueueing task %lu.", current_descriptor);
 
                     if(!enqueue_task(current_descriptor)) {
                         ERROR_LOG("poll_events: Fatal error, unable to add connection to thread queue.");

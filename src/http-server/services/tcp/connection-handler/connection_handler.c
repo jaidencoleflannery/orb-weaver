@@ -116,6 +116,22 @@ bool accept_connection(sockaddr_storage *address, int *client_descriptor) {
         return false;
     }
 
+    // set a timeout on the socket.
+    // TODO: make this a configuration value.
+    struct timeval timeout;
+    timeout.tv_sec = 10;
+    timeout.tv_usec = 0;
+
+    if(!validate_syscall(
+        setsockopt(*client_descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)),
+        "accept_connection", 
+        "Failed to set socket options for timeout value.")
+    ) {
+        DEBUG_LOG("accept_connection: Error, failed to set timeout value on new connection: %d.", *client_descriptor);
+        *client_descriptor = -1;
+        return false;
+    }
+
     DEBUG_LOG("accept_connection: Successfully accepted connection for %d.", *client_descriptor);
     return true;
 }
