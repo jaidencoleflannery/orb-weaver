@@ -169,8 +169,16 @@ bool send_data(int file_descriptor, char *data, size_t data_length, int flags) {
 
 bool receive_data(int file_descriptor, int flags, size_t buffer_length, char *buffer, size_t *num_bytes_read) {
     ssize_t bytes_received = recv(file_descriptor, buffer, buffer_length, flags);
-    if(!validate_syscall(bytes_received, "receive_data", "Failed to receive data."))
+    if(bytes_received < 0) {
+        char *socket_error = strerror(errno);
+        if(socket_error == NULL)
+            ERROR_LOG("receive_data: Failed to receive data. Error: `errno` could not be properly parsed.");
+        else if(errno == ETIMEDOUT || errno == EAGAIN || errno == EWOULDBLOCK)
+            ERROR_LOG("receive_data: Connection timed out. Error: %s.", socket_error);
+        else
+            ERROR_LOG("receive_data: Failed to receive data. Error: %s.", socket_error);
         return false;
+    }
 
     *num_bytes_read = (size_t)bytes_received;
 
