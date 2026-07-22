@@ -1,8 +1,8 @@
 #ifndef THREAD_HANDLER_H
 #define THREAD_HANDLER_H
 
-#define RECEIVE_BUFFER_SIZE 32768 // single ram page size.
-#define MAX_HEADER_SIZE 60
+#define RECEIVE_BUFFER_SIZE 32768
+#define MAX_HEADER_SIZE 8192
 #define NUM_CONNECTIONS 32768
 
 // lengths are for comparison and do not include the null terminator.

@@ -4,7 +4,7 @@
 #include <stddef.h>
 
 #include "services/logging/logging.h"
-#include "services/orchestration/orchestrator/orchestrator.c"
+#include "services/orchestration/orchestrator/orchestrator.h"
 
 int main(void) {
     if(!boot_server()) {
