@@ -194,20 +194,21 @@ static bool process_request(int socket_descriptor) {
         }
     }
 
-    char **response_buffer = NULL;
-    DEBUG_LOG("CHECKPOINT REACHED.");
-    /*
-    if(!process_http_request(socket_descriptor, buffer, total_bytes_read, response_buffer)) {
+    DEBUG_LOG("process_request: Message received, attempting to process request.");
+
+    char *response_buffer = calloc(1, MAX_RESPONSE_SIZE);
+    if(!process_http_request(socket_descriptor, buffer, total_bytes_read, &response_buffer)) {
         ERROR_LOG("process_request: Failed to invoke response on thread %lu.", (unsigned long)pthread_self());
+        free(response_buffer);
         free(buffer);
         return false;
     }
-    */
 
     // TODO: this needs to actually send the response back to the client.
     // this is a debug value, should be wholly removed.
     // for sending values, loop over the entire payload and write() to the socket descriptor in chunks (the kernel or nic handles packet segmentation).
 
+    free(response_buffer);
     free(buffer);
     return true;
 }

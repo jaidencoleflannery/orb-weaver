@@ -267,13 +267,15 @@ static bool route_http_request(char *message, size_t message_size, http_request 
         return false;
     }
 
+    DEBUG_LOG("route_http_request: Reached end of current implementation.");
+
     // TODO: complete this once dynamic routing has been implemented.
     return true;
 }
 
 // orchestrator for http request handling.
 bool process_http_request(int socket_descriptor, char *message, size_t message_size, char **response) {
-    if(message == NULL || *response == NULL) {
+    if(message == NULL || response == NULL) {
         ERROR_LOG("process_http_request: Invalid parameter was provided.");
         return false;
     }
@@ -300,6 +302,8 @@ bool process_http_request(int socket_descriptor, char *message, size_t message_s
         ERROR_LOG("process_http_request: Failed to free instance of http_request.");
         return false;
     }
+
+    // TODO: memcopy response into response parameter.
 
     return true;
 }
