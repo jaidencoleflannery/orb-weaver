@@ -9,6 +9,7 @@
 #include "./http_handler.h"
 
 // method validation is highly dependent on the http_request_method enum.
+// TODO: update this method so that it caches the header values.
 static bool validate_http_method(char *line, size_t line_size, http_request *result_metadata) {
     if(line == NULL) {
         ERROR_LOG("validate_http_method: Provided method parameter was invalid.");
@@ -19,8 +20,9 @@ static bool validate_http_method(char *line, size_t line_size, http_request *res
     size_t num_parsed = 0;
     size_t word_increment = 0;
 
+
     char *line_cursor = line;
-    while(line_cursor != NULL) {
+    while(line_cursor != NULL) { 
         if(num_parsed >= line_size || num_parsed >= MAX_HTTP_HEADER_SIZE) {
             ERROR_LOG("validate_http_method: Provided line exceeded the maximum header size.");
             return false;
@@ -84,17 +86,19 @@ static bool validate_http_method(char *line, size_t line_size, http_request *res
 
                 // method header is valid, don't care if anything comes after.
                 return true;
-            }
+            } 
 
             ++word_increment;
-            ++num_parsed;
+            num_parsed = 0;
+            ++line_cursor;
             // clear for next partition.
             memset(line_partition, 0, line_size);
             continue;
         }
 
-        line_partition[num_parsed] = *(line + num_parsed);
+        line_partition[num_parsed] = *line_cursor;
         ++num_parsed;
+        line_cursor = (line + num_parsed); 
     }
 
     return true;
@@ -131,7 +135,7 @@ static bool validate_http_header(char *header, size_t header_size, http_request 
     bool end_flag = false;
 
     char *header_cursor = header;
-    while(header_cursor != NULL) { 
+    while(header_cursor != NULL) {  
         // end of key sentinel, set status flags.
         if(*header_cursor == ':') { 
             if(flag != IS_KEY) {
@@ -183,11 +187,12 @@ static bool validate_http_header(char *header, size_t header_size, http_request 
 
         // assign values if we pass the validations.
         if(flag == IS_KEY)
-            key[num_parsed] = *header_cursor;
+            memcpy(key, header_cursor, num_parsed);
         else if(flag == IS_VALUE)
-            value[num_parsed] = *header_cursor;
+            memcpy(value, header_cursor, num_parsed);
 
         ++header_cursor;
+        ++num_parsed;
     }
 
     return true;
@@ -222,6 +227,7 @@ static bool get_http_metadata(char *message, size_t message_size, http_request *
             // '\r' marks the new carriage and is only valid for the end of a line (ie header value).
             // '\r' must be followed by '\n'.
             end_flag = true;
+            ++message_cursor;
             continue;
         }
 
@@ -253,6 +259,8 @@ static bool get_http_metadata(char *message, size_t message_size, http_request *
         header_line[num_parsed] = *message_cursor;
         ++num_parsed;
         ++message_cursor;
+
+        DEBUG_LOG("get_http_metadata: looped.");
     }
 
     return true;

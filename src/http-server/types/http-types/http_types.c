@@ -10,9 +10,6 @@ bool allocate_http_request(http_request **http_request_instance) {
     if(http_request_instance == NULL) {
         ERROR_LOG("allocate_http_request: Provided http_request pointer was NULL.");
         return false;
-    } else if(*http_request_instance != NULL) {
-        ERROR_LOG("allocate_http_request: Provided http_request instance has already been allocated.");
-        return false;
     }
 
     *http_request_instance = (http_request *)calloc(1, sizeof(http_request));

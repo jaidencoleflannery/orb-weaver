@@ -139,8 +139,6 @@ static bool process_request(int socket_descriptor) {
 
         memcpy((buffer + total_bytes_read), header_buffer, num_bytes_read);
         total_bytes_read += num_bytes_read;
-
-        DEBUG_LOG("Looped on thread %lu.", (unsigned long)pthread_self());
     }
 
     char *content_length_header = strstr(buffer, CONTENT_LENGTH_HEADER);
