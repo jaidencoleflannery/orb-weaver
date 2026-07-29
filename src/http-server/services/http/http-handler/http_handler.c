@@ -27,7 +27,15 @@ static bool validate_http_metadata(char *line, size_t line_size, http_request *r
 
     char *line_cursor = line;
     while(line_cursor != NULL) {
-        if(num_parsed >= line_size || num_parsed >= MAX_HTTP_HEADER_SIZE) {
+        if(*line_cursor == '\r') {
+            if(word_increment < 2
+            || result_metadata->http_method == TYPE_NULL
+            || result_metadata->http_route == NULL
+            || result_metadata->http_route_size < 1)
+            break;
+        }
+
+        if(num_parsed > line_size || num_parsed >= MAX_HTTP_HEADER_SIZE) {
             ERROR_LOG("validate_http_method: Provided line exceeded the maximum header size.");
             return false;
         }
@@ -100,7 +108,7 @@ static bool validate_http_metadata(char *line, size_t line_size, http_request *r
 
                 // request line 0 is minimally valid.
                 return true;
-            } 
+            }
 
             ++word_increment;
             ++line_cursor;
@@ -289,8 +297,6 @@ static bool get_http_metadata(char *message, size_t message_size, http_request *
         header_line[num_parsed] = *message_cursor;
         ++num_parsed;
         ++message_cursor;
-
-        DEBUG_LOG("get_http_metadata: looped.");
     }
 
     return true;
@@ -312,14 +318,14 @@ static bool route_http_request(char *message, size_t message_size, http_request 
 }
 
 // orchestrator for http request handling.
-bool process_http_request(int socket_descriptor, char *message, size_t message_size, char **response) {
+bool process_http_request(int socket_descriptor, char *message, size_t message_size, http_request **response) {
     if(message == NULL || response == NULL) {
         ERROR_LOG("process_http_request: Invalid parameter was provided.");
         return false;
     }
 
     // heap alloc.
-    http_request *parsing_result;
+    http_request *parsing_result = { 0 };
     if(!allocate_http_request(&parsing_result)) {
         ERROR_LOG("process_http_request: Failed to allocate memory for http_request.");
         return false;
@@ -341,7 +347,7 @@ bool process_http_request(int socket_descriptor, char *message, size_t message_s
         return false;
     }
 
-    // TODO: memcopy response into response parameter.
+    // TODO: process routing and respond with html to return to the client.
 
     return true;
 }

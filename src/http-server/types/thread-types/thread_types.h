@@ -1,5 +1,5 @@
 #ifndef THREAD_TYPES_H
-#define THREAD_TYPES
+#define THREAD_TYPES_H
 
 typedef struct thread {
     size_t virtual_id;

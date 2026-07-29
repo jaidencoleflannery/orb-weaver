@@ -7,22 +7,20 @@
 #define MAX_HTTP_BODY_SIZE 1.049e6f // arbitrary.
 
 typedef enum {
-    VERSION_0_9,
+    VERSION_0_9, // default
     VERSION_1_0,
     VERSION_1_1,
-    VERSION_2_0,
-    VERSION_3_0,
     VERSION_COUNT, // num protocols.
     VERSION_NULL
 } http_request_protocol;
 
 typedef enum {
+    TYPE_NULL,
     TYPE_GET,
     TYPE_POST,
     TYPE_PUT,
     TYPE_DELETE, 
-    TYPE_COUNT, // num types.
-    TYPE_NULL
+    TYPE_COUNT // num types. 
 } http_request_method;
 
 typedef struct { 
@@ -33,7 +31,7 @@ typedef struct {
     bool    valid;
 } http_request_header;
 
-typedef struct { 
+typedef struct {
     http_request_method http_method;
     http_request_protocol http_protocol;
     http_request_header *http_headers; 

@@ -37,12 +37,10 @@ static const method_entry method_entries[] = {
 static const protocol_entry protocol_entries[] = {
     { "",           VERSION_0_9 }, // default.
     { "HTTP/1.0",   VERSION_1_0 },
-    { "HTTP/1.1",   VERSION_1_1 },
+    { "HTTP/1.1",   VERSION_1_1 }
 };
 
-static const 
-
-bool process_http_request(int socket_descriptor, char *message, size_t message_size, char **response);
+bool process_http_request(int socket_descriptor, char *message, size_t message_size, http_request **response);
 
 #endif
 
