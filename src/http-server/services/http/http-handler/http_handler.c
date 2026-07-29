@@ -9,28 +9,34 @@
 #include "./http_handler.h"
 
 // method validation is highly dependent on the http_request_method enum.
-// TODO: update this method so that it caches the header values.
-static bool validate_http_method(char *line, size_t line_size, http_request *result_metadata) {
+// this validates the entire first line of the http request.
+static bool validate_http_metadata(char *line, size_t line_size, http_request *result_metadata) {
     if(line == NULL) {
         ERROR_LOG("validate_http_method: Provided method parameter was invalid.");
         return false;
     }
 
-    char line_partition[line_size]; 
-    size_t num_parsed = 0;
-    size_t word_increment = 0;
+    char line_partition[line_size];
 
+    size_t num_parsed       = 0;
+    size_t word_increment   = 0;
+
+    size_t method_size      = 0;
+    size_t route_size       = 0;
+    size_t protocol_size     = 0;
 
     char *line_cursor = line;
-    while(line_cursor != NULL) { 
+    while(line_cursor != NULL) {
         if(num_parsed >= line_size || num_parsed >= MAX_HTTP_HEADER_SIZE) {
             ERROR_LOG("validate_http_method: Provided line exceeded the maximum header size.");
             return false;
         }
 
-        if(*line_cursor == ' ') { 
+        // the cache for the string we're checking
+        // is filled at the bottom of this function.
+        if(*line_cursor == ' ') {
             if(word_increment == 0) { // request method.
-                if(num_parsed < 3) {
+                if(method_size < 3) {
                     ERROR_LOG("validate_http_method: First value (method) of the method line was invalid.");
                     return false;
                 }
@@ -49,8 +55,8 @@ static bool validate_http_method(char *line, size_t line_size, http_request *res
                     result_metadata->http_method = TYPE_NULL;
                     return false;
                 }  
-            } else if(word_increment == 1) { // route.
-                if(num_parsed < 1) {
+            } else if(word_increment == 1) { // request route.
+                if(route_size < 1) {
                     ERROR_LOG("validate_http_method: Second value (route) of the method line was invalid.");
                     return false;
                 }
@@ -58,7 +64,8 @@ static bool validate_http_method(char *line, size_t line_size, http_request *res
                 bool route_valid = false;
                 // if you're looking for the route handler, you're at the wrong castle.
                 if(*line_partition == '/') {
-                    memcpy(result_metadata->http_route, line_partition, sizeof(line_partition));
+                    memcpy(result_metadata->http_route, line_partition, strlen(line_partition) + 1); // + 1 for '\0'.
+                    result_metadata->http_route_size = num_parsed;
                     route_valid = true;
                 }
 
@@ -68,8 +75,8 @@ static bool validate_http_method(char *line, size_t line_size, http_request *res
                     return false;
                 }
             } else if(word_increment == 2) { // protocol.
-                if(num_parsed < 1) {
-                    ERROR_LOG("validate_http_method: Third value (protocol) of the method line was invalid.");
+                if(protocol_size < 1) {
+                    ERROR_LOG("validate_http_method: Third value (protocol) of the method line was malformed.");
                     return false;
                 }
 
@@ -84,19 +91,34 @@ static bool validate_http_method(char *line, size_t line_size, http_request *res
                     return false;
                 }
 
-                // method header is valid, don't care if anything comes after.
+                // request line 0 is minimally valid.
                 return true;
             } 
 
             ++word_increment;
-            num_parsed = 0;
             ++line_cursor;
             // clear for next partition.
             memset(line_partition, 0, line_size);
             continue;
         }
 
-        line_partition[num_parsed] = *line_cursor;
+        switch(word_increment) {
+
+            case 0: // method.
+                ++method_size;
+                break;
+
+            case 1: // route.
+                ++route_size;
+                break;
+
+            case 2: // protocol
+                ++protocol_size;
+                break;
+
+        }
+
+        line_partition[num_parsed] = *line_cursor; 
         ++num_parsed;
         line_cursor = (line + num_parsed); 
     }
@@ -240,7 +262,7 @@ static bool get_http_metadata(char *message, size_t message_size, http_request *
         } else if(*message_cursor == '\n' && end_flag == true) {
             bool validation_result = false;
             if(line_increment < 1) // if first line, get method.
-                validation_result = validate_http_method(header_line, num_parsed, *result_metadata); 
+                validation_result = validate_http_metadata(header_line, num_parsed, *result_metadata); 
             else // else, parse current header.
                 validation_result = validate_http_header(header_line, num_parsed, *result_metadata);
 
