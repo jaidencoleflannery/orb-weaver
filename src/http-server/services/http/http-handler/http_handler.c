@@ -65,7 +65,7 @@ static bool validate_http_metadata(char *line, size_t line_size, http_request *r
                 // if you're looking for the route handler, you're at the wrong castle.
                 if(*line_partition == '/') {
                     memcpy(result_metadata->http_route, line_partition, strlen(line_partition) + 1); // + 1 for '\0'.
-                    result_metadata->http_route_size = num_parsed;
+                    result_metadata->http_route_size = route_size;
                     route_valid = true;
                 }
 
@@ -82,7 +82,14 @@ static bool validate_http_metadata(char *line, size_t line_size, http_request *r
 
                 bool protocol_valid = false;
 
-                line_partition[4] = '\0'; // this is scuffed, but it cuts out the protocol version.
+                for(int protocol_cursor = 0; protocol_cursor < VERSION_COUNT; protocol_cursor++) {
+                    if(strcmp(line_partition, protocol_entries[protocol_cursor].name) == 0) {
+                        result_metadata->http_protocol = protocol_entries[protocol_cursor].protocol;
+                        protocol_valid = true;
+                        break;
+                    }
+                }
+
                 if(strcmp(line_partition, PROTOCOL) == 0)
                     protocol_valid = true;
 
@@ -97,6 +104,8 @@ static bool validate_http_metadata(char *line, size_t line_size, http_request *r
 
             ++word_increment;
             ++line_cursor;
+            ++num_parsed;
+            line_cursor = (line + num_parsed);
             // clear for next partition.
             memset(line_partition, 0, line_size);
             continue;
@@ -105,20 +114,19 @@ static bool validate_http_metadata(char *line, size_t line_size, http_request *r
         switch(word_increment) {
 
             case 0: // method.
-                ++method_size;
+                line_partition[method_size++] = *line_cursor;
                 break;
 
             case 1: // route.
-                ++route_size;
+                line_partition[route_size++] = *line_cursor;
                 break;
 
             case 2: // protocol
-                ++protocol_size;
+                line_partition[protocol_size++] = *line_cursor;
                 break;
 
         }
 
-        line_partition[num_parsed] = *line_cursor; 
         ++num_parsed;
         line_cursor = (line + num_parsed); 
     }

@@ -7,11 +7,21 @@
 #define MAX_HTTP_BODY_SIZE 1.049e6f // arbitrary.
 
 typedef enum {
+    VERSION_0_9,
+    VERSION_1_0,
+    VERSION_1_1,
+    VERSION_2_0,
+    VERSION_3_0,
+    VERSION_COUNT, // num protocols.
+    VERSION_NULL
+} http_request_protocol;
+
+typedef enum {
     TYPE_GET,
     TYPE_POST,
     TYPE_PUT,
     TYPE_DELETE, 
-    TYPE_COUNT, // sentinel
+    TYPE_COUNT, // num types.
     TYPE_NULL
 } http_request_method;
 
@@ -24,13 +34,14 @@ typedef struct {
 } http_request_header;
 
 typedef struct { 
-    size_t              http_route_size; 
-    size_t              http_headers_size; 
-    size_t              http_body_size; 
     http_request_method http_method;
-    http_request_header *http_headers;
-    char                *http_route;
-    char                *http_body;
+    http_request_protocol http_protocol;
+    http_request_header *http_headers; 
+    size_t http_route_size;
+    size_t http_headers_size;
+    size_t http_body_size;
+    char *http_route;
+    char *http_body;
 } http_request;
 
 bool allocate_http_request(http_request **http_request_instance);
