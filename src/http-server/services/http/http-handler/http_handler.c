@@ -27,22 +27,14 @@ static bool validate_http_metadata(char *line, size_t line_size, http_request *r
 
     char *line_cursor = line;
     while(line_cursor != NULL) {
-        if(*line_cursor == '\r') {
-            if(word_increment < 2
-            || result_metadata->http_method == TYPE_NULL
-            || result_metadata->http_route == NULL
-            || result_metadata->http_route_size < 1)
-            break;
-        }
-
-        if(num_parsed > line_size || num_parsed >= MAX_HTTP_HEADER_SIZE) {
+        if(num_parsed > line_size || num_parsed > MAX_HTTP_HEADER_SIZE) {
             ERROR_LOG("validate_http_method: Provided line exceeded the maximum header size.");
             return false;
         }
 
         // the cache for the string we're checking
         // is filled at the bottom of this function.
-        if(*line_cursor == ' ') {
+        if(*line_cursor == ' ' || *line_cursor == '\0') {
             if(word_increment == 0) { // request method.
                 if(method_size < 3) {
                     ERROR_LOG("validate_http_method: First value (method) of the method line was invalid.");
@@ -107,7 +99,13 @@ static bool validate_http_metadata(char *line, size_t line_size, http_request *r
                 }
 
                 // request line 0 is minimally valid.
-                return true;
+                if(word_increment >= 2
+                || result_metadata->http_method == TYPE_NULL
+                || result_metadata->http_route == NULL
+                || result_metadata->http_route_size < 1)
+                    return true;
+                else
+                    break; // failure fallthrough.
             }
 
             ++word_increment;
@@ -139,7 +137,8 @@ static bool validate_http_metadata(char *line, size_t line_size, http_request *r
         line_cursor = (line + num_parsed); 
     }
 
-    return true;
+    ERROR_LOG("validate_http_method: Failure, unexpected fallthrough condition caught, header value was malformed.");
+    return false;
 }
 
 // validate a single header.
