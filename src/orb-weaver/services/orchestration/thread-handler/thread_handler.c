@@ -31,29 +31,33 @@ static int num_connections = 0;
  * all other threads wait for the mutex to become available, and repeat the aforementioned behavior. 
 */
 
+/*
+ * + adds a task to the queue.
+ * threads are blocked on queue until a task is added.
+*/ 
 bool enqueue_task(uintptr_t client_descriptor) {
-    // enqueue_task is not multi-threaded, this is just to guarantee safety + delay for observers.
+    // guarantee fifo.
     pthread_mutex_lock(&enqueue_lock);
-    DEBUG_LOG("enqueue_task: Enqueuing task %lu.", client_descriptor);
 
-    (*queue_tail)->next = calloc(1, sizeof(connection_instance));
-    if((*queue_tail)->next == NULL) {
-        ERROR_LOG("enqueue_task: Failed to allocate memory for task.");
-        pthread_mutex_unlock(&enqueue_lock);
-        return false;
-    }
+        (*queue_tail)->next = calloc(1, sizeof(connection_instance));
+        if((*queue_tail)->next == NULL) {
+            ERROR_LOG("enqueue_task: Failed to allocate memory for task.");
+            pthread_mutex_unlock(&enqueue_lock);
+            return false;
+        }
 
-    *(*queue_tail)->next = (connection_instance){ 0 };
+        *(*queue_tail)->next = (connection_instance){ 0 };
 
-    (*queue_tail)->next->previous = *queue_tail;
-    queue_tail = &(*queue_tail)->next;
-    (*queue_tail)->socket_descriptor = client_descriptor; 
+        (*queue_tail)->next->previous = *queue_tail;
+        queue_tail = &(*queue_tail)->next;
+        (*queue_tail)->socket_descriptor = client_descriptor; 
 
-    // this is iterated in between two locks, but due to the signal it should not be an issue.
-    ++num_connections; 
-    DEBUG_LOG("enqueue_task: Task successfully queued, total tasks: %d.", num_connections);
+        // shared between locks.
+        ++num_connections; 
+        DEBUG_LOG("enqueue_task: Task successfully queued, total tasks: %d.", num_connections);
 
     pthread_mutex_unlock(&enqueue_lock);
+    // ring the dinner bell (wake up waiting thread).
     pthread_cond_signal(&thread_lock_available);
   
     return true;
