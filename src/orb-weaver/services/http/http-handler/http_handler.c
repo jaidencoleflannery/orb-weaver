@@ -153,7 +153,7 @@ static bool validate_http_header(char *header, size_t header_size, http_request 
     if(result == NULL) {
         ERROR_LOG("validate_http_header: Failed to allocate memory for header result.");
         return false;
-    } 
+    }
 
     result->value = (char *)calloc(1, sizeof(header_size));
     if(result->key == NULL) {
@@ -330,6 +330,7 @@ bool process_http_request(int socket_descriptor, char *message, size_t message_s
         return false;
     }
 
+    // get, validate and store header values.
     if(!get_http_metadata(message, message_size, &parsing_result)) {
         ERROR_LOG("process_http_request: Failed to parse http request headers.");
         return false;

@@ -31,7 +31,7 @@ static int num_connections = 0;
  * all other threads wait for the mutex to become available, and repeat the aforementioned behavior. 
 */
 
-bool enqueue_task(uintptr_t client_descriptor) { 
+bool enqueue_task(uintptr_t client_descriptor) {
     // enqueue_task is not multi-threaded, this is just to guarantee safety + delay for observers.
     pthread_mutex_lock(&enqueue_lock);
     DEBUG_LOG("enqueue_task: Enqueuing task %lu.", client_descriptor);
@@ -101,7 +101,7 @@ bool pull_next_task(int *result) {
     return (*result != -1);
 }
 
-static bool process_request(int socket_descriptor) { 
+static bool process_request(int socket_descriptor) {
     DEBUG_LOG("process_request: Processing request on socket: %d, thread: %lu.", socket_descriptor, (unsigned long)pthread_self());
  
     char *buffer = calloc(1, RECEIVE_BUFFER_SIZE);
@@ -194,7 +194,7 @@ static bool process_request(int socket_descriptor) {
 
     DEBUG_LOG("process_request: Message received, attempting to process request.");
 
-    char *response_buffer = calloc(1, MAX_RESPONSE_SIZE);
+    http_request *response_buffer = calloc(1, MAX_RESPONSE_SIZE);
     if(!process_http_request(socket_descriptor, buffer, total_bytes_read, &response_buffer)) {
         ERROR_LOG("process_request: Failed to invoke response on thread %lu.", (unsigned long)pthread_self());
         free(response_buffer);
@@ -205,6 +205,7 @@ static bool process_request(int socket_descriptor) {
     // TODO: this needs to actually send the response back to the client.
     // this is a debug value, should be wholly removed.
     // for sending values, loop over the entire payload and write() to the socket descriptor in chunks (the kernel or nic handles packet segmentation).
+    DEBUG_LOG("checkpoint reached. remove this log");
 
     free(response_buffer);
     free(buffer);
