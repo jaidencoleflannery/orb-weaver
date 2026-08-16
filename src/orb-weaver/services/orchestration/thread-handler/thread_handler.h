@@ -16,6 +16,4 @@ bool init_thread_handler();
 
 bool enqueue_task(uintptr_t client_descriptor);
 
-bool pull_next_task(int *result);
-
 #endif

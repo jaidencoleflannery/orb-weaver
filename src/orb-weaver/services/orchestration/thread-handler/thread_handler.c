@@ -23,6 +23,9 @@ static connection_instance *queue_head;
 static connection_instance **queue_tail = &queue_head;
 static int num_connections = 0;
 
+static bool process_request(int socket_descriptor);
+static bool pull_next_task(int *result);
+
 /*
  * thread_handler implements the producer consumer pattern.
  * the producer is the queue of connections, which the threads pull from.
@@ -32,11 +35,56 @@ static int num_connections = 0;
 */
 
 /*
+ * + runtime per thread.
+*/
+static void *thread_runner(void *arg) { 
+    // thread rejoins queue when finished with prior task.
+    while(1) {
+        DEBUG_LOG("thread_runner: Thread %lu is waiting.", (unsigned long)pthread_self());
+        pthread_mutex_lock(&thread_lock);
+
+        // a single thread waits on the queue at a time.
+        // once an event is enqueued, it grabs it, releases the lock, and begins processing the task.
+
+            while(num_connections == 0) {
+                DEBUG_LOG("thread_runner: Thread %lu found no active events, sleeping until signal is received.", (unsigned long)pthread_self());
+                pthread_cond_wait(&thread_lock_available, &thread_lock);
+            }
+
+            DEBUG_LOG("thread_runner: Thread %lu was awoken - acting on task in queue.", (unsigned long)pthread_self());
+
+            int *socket_descriptor = calloc(1, sizeof(int));
+            *socket_descriptor = -1;
+            if(!pull_next_task(socket_descriptor)) {
+                ERROR_LOG("thread_runner: Failed to fetch socket_descriptor from queue, error encountered on thread %lu.", (unsigned long)pthread_self());
+                pthread_mutex_unlock(&thread_lock);
+                close(*socket_descriptor);
+                free(socket_descriptor);
+                continue;
+            }
+
+        pthread_mutex_unlock(&thread_lock);
+        
+        DEBUG_LOG("thread_runner: Processing task %d.", *socket_descriptor);
+        if(!process_request(*socket_descriptor)) {
+            ERROR_LOG("thread_runner: Unable to process request on thread %lu.", (unsigned long)pthread_self());
+            close(*socket_descriptor);
+            free(socket_descriptor);
+            continue;
+        }
+
+        close(*socket_descriptor);
+        free(socket_descriptor); 
+    }
+
+    return NULL;
+}
+
+/*
  * + adds a task to the queue.
- * threads are blocked on queue until a task is added.
-*/ 
+*/
 bool enqueue_task(uintptr_t client_descriptor) {
-    // guarantee fifo.
+    // guarantee queue ordering.
     pthread_mutex_lock(&enqueue_lock);
 
         (*queue_tail)->next = calloc(1, sizeof(connection_instance));
@@ -63,60 +111,65 @@ bool enqueue_task(uintptr_t client_descriptor) {
     return true;
 }
 
-// returns the file descriptor for the connection.
-bool pull_next_task(int *result) {
+/*
+ * + fetch the foremost task from the queue.
+ * returns the file descriptor for the connection via the address parameter.
+*/
+static bool pull_next_task(int *result) {
     if(result == NULL) {
         ERROR_LOG("pull_next_task: Failure, invalid result parameter was provided.");
         return false;
     }
 
-    // enqueue can race here.
+    // guarantee queue ordering.
     pthread_mutex_lock(&enqueue_lock);
 
-    DEBUG_LOG("pull_next_task: Attempting to pull task from queue.");
+        connection_instance *task = queue_head->next;
+        if(task == NULL) {
+            ERROR_LOG("pull_next_task: Failure, no task found.");
+            pthread_mutex_unlock(&enqueue_lock);
+            return false;
+        }
 
-    connection_instance *task = queue_head->next;
-    if(task == NULL) {
-        ERROR_LOG("pull_next_task: Failure, no task found.");
-        pthread_mutex_unlock(&enqueue_lock);
-        return false;
-    }
+        *result = task->socket_descriptor;
+        if(result == NULL || *result < 0) {
+            ERROR_LOG("pull_next_task: Failure, socket descriptor in queue was invalid, clearing task from queue.");
+            *result = -1; // pop + free node and return a placeholder node via following logic.
+        }
 
-    *result = task->socket_descriptor;
-    if(result == NULL || *result < 0) {
-        ERROR_LOG("pull_next_task: Failure, socket descriptor in queue was invalid, clearing task from queue.");
-        *result = -1; // pop + free node and return a placeholder node.
-    }
+        // pop node.
+        if(task == *queue_tail) {
+            queue_head->next = NULL;
+            queue_tail = &queue_head;
+        } else {
+            queue_head->next = queue_head->next->next;
+            queue_head->next->previous = queue_head;
+        } 
 
-    // pop node.
-    if(task == *queue_tail) {
-        queue_head->next = NULL;
-        queue_tail = &queue_head;
-    } else {
-        queue_head->next = queue_head->next->next;
-        queue_head->next->previous = queue_head;
-    } 
-
-    free(task);
-    --num_connections;
+        free(task);
+        --num_connections;
 
     pthread_mutex_unlock(&enqueue_lock); 
 
+    // signal validity of data to caller.
     return (*result != -1);
 }
 
+/*
+ * + load headers and body into buffer.
+ * + pass unvalidated data straight to processor.
+*/
 static bool process_request(int socket_descriptor) {
-    DEBUG_LOG("process_request: Processing request on socket: %d, thread: %lu.", socket_descriptor, (unsigned long)pthread_self());
- 
     char *buffer = calloc(1, RECEIVE_BUFFER_SIZE);
     if(buffer == NULL) {
-        ERROR_LOG("process_request: Failed to allocate memory for buffer on thread %lu.", (unsigned long)pthread_self());
+        ERROR_LOG("process_request: Error, failed to allocate memory for buffer on thread %lu.", (unsigned long)pthread_self());
         return false;
     }
 
     char header_buffer[MAX_HEADER_SIZE] = { 0 };
     size_t total_bytes_read = 0;
     // header values.
+    // end of header http is signalled by double new carriage.
     while(!memmem(buffer, total_bytes_read, END_OF_BUFFER, END_OF_BUFFER_LENGTH)) {
         size_t num_bytes_read = 0;
         memset(header_buffer, 0, MAX_HEADER_SIZE); // in loop clear.
@@ -126,15 +179,13 @@ static bool process_request(int socket_descriptor) {
             return false;
         }
 
-        DEBUG_LOG("Read %zu header bytes on thread %lu.", num_bytes_read, (unsigned long)pthread_self());
-
         if((total_bytes_read + num_bytes_read) > MAX_HEADER_SIZE) {
             ERROR_LOG("process_request: Failure, request header exceeded maximum memory capacity of %d on thread %lu.", MAX_HEADER_SIZE, (unsigned long)pthread_self());
             free(buffer);
             return false;
         }
 
-        // end of data.
+        // end of data reached with no proper header sentinel.
         if(num_bytes_read < 1) {
             DEBUG_LOG("process_request: Connection was closed on thread %lu.", (unsigned long)pthread_self());
             free(buffer);
@@ -214,47 +265,6 @@ static bool process_request(int socket_descriptor) {
     free(response_buffer);
     free(buffer);
     return true;
-}
-
-static void *thread_runner(void *arg) {
-    DEBUG_LOG("thread_runner: Thread %lu is waiting for a connection to join the queue.", (unsigned long)pthread_self());
-
-    while(1) {
-        pthread_mutex_lock(&thread_lock);
-
-        while(num_connections == 0) {
-            DEBUG_LOG("thread_runner: Thread %lu found no active events, waiting on signal.", (unsigned long)pthread_self());
-            pthread_cond_wait(&thread_lock_available, &thread_lock);
-        }
-
-        DEBUG_LOG("thread_runner: Thread %lu found a value in the queue.", (unsigned long)pthread_self());
-
-        int *socket_descriptor = calloc(1, sizeof(int));
-        *socket_descriptor = -1;
-        if(!pull_next_task(socket_descriptor)) {
-            ERROR_LOG("thread_runner: Failed to fetch socket_descriptor from queue, error encountered on thread %lu.", (unsigned long)pthread_self());
-            pthread_mutex_unlock(&thread_lock);
-            close(*socket_descriptor);
-            free(socket_descriptor);
-            continue;
-        }
-
-        pthread_mutex_unlock(&thread_lock);
-        DEBUG_LOG("thread_runner: Released lock on thread %lu.", (unsigned long)pthread_self());
-        
-        DEBUG_LOG("thread_runner: Processing task %d.", *socket_descriptor);
-        if(!process_request(*socket_descriptor)) {
-            ERROR_LOG("thread_runner: Unable to process request on thread %lu.", (unsigned long)pthread_self());
-            close(*socket_descriptor);
-            free(socket_descriptor);
-            continue;
-        }
-
-        close(*socket_descriptor);
-        free(socket_descriptor); 
-    }
-
-    return NULL;
 }
 
 /*
