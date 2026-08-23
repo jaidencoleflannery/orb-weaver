@@ -2,6 +2,7 @@
 #define HTTP_HANDLER_H
 
 #define PROTOCOL "HTTP"
+#define HOST_HEADER_KEY "Host"
 
 #include "types/http-types/http_types.h"
 

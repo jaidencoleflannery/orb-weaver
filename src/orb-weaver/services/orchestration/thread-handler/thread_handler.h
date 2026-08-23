@@ -2,9 +2,8 @@
 #define THREAD_HANDLER_H
 
 #define RECEIVE_BUFFER_SIZE 32768
-#define MAX_HEADER_SIZE 8192
 #define NUM_CONNECTIONS 32768
-#define MAX_RESPONSE_SIZE 32768
+#define MAX_RESPONSE_SIZE 134217728 // 128mb.
 
 // lengths are for comparison and do not include the null terminator.
 #define END_OF_BUFFER "\r\n\r\n"

@@ -295,20 +295,20 @@ bool init_thread_handler(void) {
 }
 
 static bool _get_request_headers(char *buffer, int socket_descriptor, int32_t *total_bytes_read) {
-    char header_buffer[MAX_HEADER_SIZE] = { 0 }; 
+    char header_buffer[MAX_HTTP_HEADER_LINE_SIZE] = { 0 }; 
     // header values.
     // end of http header is signalled by double new carriage.
     while(!memmem(buffer, *total_bytes_read, END_OF_BUFFER, END_OF_BUFFER_LENGTH)) {
         size_t num_bytes_read = 0;
-        memset(header_buffer, 0, MAX_HEADER_SIZE); // in loop clear.
-        if(!receive_data(socket_descriptor, 0, (MAX_HEADER_SIZE - 1), header_buffer, &num_bytes_read)) {
+        memset(header_buffer, 0, MAX_HTTP_HEADER_LINE_SIZE); // in loop clear.
+        if(!receive_data(socket_descriptor, 0, (MAX_HTTP_HEADER_LINE_SIZE - 1), header_buffer, &num_bytes_read)) {
             ERROR_LOG("parse_header: Failed to receive data on thread %lu.", (unsigned long)pthread_self());
             free(buffer);
             return false;
         }
 
-        if((*total_bytes_read + num_bytes_read) > MAX_HEADER_SIZE) {
-            ERROR_LOG("parse_header: Failure, request header exceeded maximum memory capacity of %d on thread %lu.", MAX_HEADER_SIZE, (unsigned long)pthread_self());
+        if((*total_bytes_read + num_bytes_read) > MAX_HTTP_HEADER_LINE_SIZE) {
+            ERROR_LOG("parse_header: Failure, request header exceeded maximum memory capacity of %d on thread %lu.", MAX_HTTP_HEADER_LINE_SIZE, (unsigned long)pthread_self());
             free(buffer);
             return false;
         }

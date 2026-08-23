@@ -142,41 +142,32 @@ static bool _validate_http_metadata(char *line, size_t line_size, http_request *
 }
 
 // validate a single header.
-static bool _validate_http_header(char *header, size_t header_size, http_request *result_metadata) {
+static bool _validate_http_header(char *header, size_t header_size, http_request_header *result_header) {
     if(header == NULL) {
         ERROR_LOG("_validate_http_header: Provided header parameter was invalid.");
         return false;
-    }
+    } 
 
-    // storage for parsed header (atomic).
-    http_request_header *result = (http_request_header *)calloc(1, sizeof(http_request_header)); 
-    if(result == NULL) {
-        ERROR_LOG("_validate_http_header: Failed to allocate memory for header result.");
-        return false;
-    }
-
-    result->value = (char *)calloc(1, sizeof(header_size));
-
-    result->key = (char *)calloc(1, sizeof(header_size));
-    if(result->key == NULL) {
-        ERROR_LOG("_validate_http_header: Failed to allocate memory for header result value.");
-        return false;
-    }
-
-    // for atomic safety.
     char key_cache[header_size];
+    size_t key_cache_size = 0;
+    memset(key_cache, 0, header_size); 
+
     char value_cache[header_size];
+    size_t value_cache_size = 0;
+    memset(value_cache, 0, header_size);
+
     uint32_t cache_cursor = 0;
 
-    // flag for three portions of header.
+    // state machine for three portions of header.
     header_status flag = IS_KEY;
 
-    // flag for end of line.
-    bool end_flag = false;
-    int num_parsed;
+    // http spec requirement validation.
+    bool hostFound = false;
 
+    int num_parsed;
     char *header_cursor = header; 
-    while(header_cursor != NULL) {  
+    while(header_cursor != NULL) {
+
         // end of key sentinel, set status flags.
         if(*header_cursor == ':') { 
             if(flag != IS_KEY) {
@@ -186,6 +177,7 @@ static bool _validate_http_header(char *header, size_t header_size, http_request
 
             flag = IS_ASSIGNING; // next char needs to be a space.
             ++header_cursor;
+            // skip the colon value.
             continue;
         }
 
@@ -196,17 +188,13 @@ static bool _validate_http_header(char *header, size_t header_size, http_request
                 return false;
             }
 
-            result->key = calloc(1, num_parsed);
-            if(result->key == NULL) {
-                ERROR_LOG("_validate_http_header: Failed to allocate memory for header result key.");
-                return false;
-            }
-
-            memcpy(result->key, key_cache, num_parsed);
+            if(strcmp(key_cache, HOST_HEADER_KEY))
+                hostFound = true;
 
             flag = IS_VALUE;
             ++header_cursor;
             num_parsed = 0;
+
             continue;
         }
 
@@ -214,29 +202,50 @@ static bool _validate_http_header(char *header, size_t header_size, http_request
         if(flag == IS_ASSIGNING && *header_cursor != ' ') {
             ERROR_LOG("_validate_http_header: Header was malformed.");
             return false;
+        } 
+
+        // assign values if we pass the validations.
+        if(flag == IS_KEY) {
+            key_cache[cache_cursor] = *header_cursor;
+            ++key_cache_size;
+        } else if(flag == IS_VALUE) {
+            value_cache[cache_cursor] = *header_cursor;
+            ++value_cache_size;
         }
+
+        ++cache_cursor;
 
         if(*header_cursor == '\r') {
             if(flag != IS_VALUE) {
-                ERROR_LOG("_validate_http_header: Header was malformed.");
+                ERROR_LOG("_validate_http_header: Header was malformed, encountered a newline character within the header line.");
                 return false;
             }
 
-            end_flag = true;
-            // TODO: validate end of header.
+            if((header_cursor + 1) == NULL
+            || *(header_cursor + 1) != '\n') {
+                ERROR_LOG("Failure, header was malformed around a newline character.");
+                return false;
+            }
         }
 
-        // assign values if we pass the validations.
-        if(flag == IS_KEY)
-            key_cache[cache_cursor] = *header_cursor;
-        else if(flag == IS_VALUE)
-            value_cache[cache_cursor] = *header_cursor;
-
         ++header_cursor;
-        ++num_parsed;
+        ++num_parsed; 
+    }
+ 
+    // persist data to the heap.
+    result_header = calloc(1, sizeof(http_request_header)); 
+    if(result_header == NULL) {
+        ERROR_LOG("Error, failed to allocate memory for header during validation.");
+        return false;
     }
 
-    return true;
+    memcpy(result_header->key, key_cache, key_cache_size);
+    result_header->key_size = key_cache_size;
+    memcpy(result_header->value, value_cache, value_cache_size);
+    result_header->value_size = value_cache_size;
+    result_header->valid = true;
+
+    return result_header->valid;
 }
 
 // request metadata (line 0) is considered a header here.
@@ -256,6 +265,9 @@ static bool _get_http_metadata(char *raw, size_t raw_size, http_request **result
     uint32_t line_increment = 0; // to validate entry in method header line.
     uint32_t num_parsed = 0;
 
+    http_request_header *validated_headers[MAX_HTTP_HEADER_COUNT * sizeof(void *)];
+    uint32_t validated_cursor = 0;
+
     while(raw_cursor != NULL) {
         if(num_parsed == MAX_HTTP_HEADER_LINE_SIZE ) {
             ERROR_LOG("_get_http_metadata: Provided HTTP request's header value exceeded the maximum length of %d.", MAX_HTTP_HEADER_LINE_SIZE);
@@ -274,10 +286,19 @@ static bool _get_http_metadata(char *raw, size_t raw_size, http_request **result
             if((raw_cursor + 1) != NULL
             && *(raw_cursor + 1) == '\n') {
                 bool validation_result = false; 
-                if(line_increment < 1) // if first line, get method - this stores the parsed value.
+                if(line_increment < 1) { // if first line, get method - this stores the parsed value.
                     validation_result = _validate_http_metadata(header_line, num_parsed, *result_metadata);
-                else // else, parse current header - this stores the parsed value.
-                    validation_result = _validate_http_header(header_line, num_parsed, *result_metadata);
+                } else { // else, parse current header - this stores the parsed value.
+                    http_request_header *raw_header;
+                    if(!_validate_http_header(header_line, num_parsed, raw_header)) {
+                        if(raw_header != NULL)
+                            free(raw_header);
+                        ERROR_LOG("Invalid header value was encountered, ignoring header.");
+                    }
+
+                    validated_headers[validated_cursor] = raw_header;
+                    ++validated_cursor;
+                }
 
                 if(!validation_result) {
                     ERROR_LOG("_get_http_metadata: Provided HTTP request's method or headers vere invalid.");
