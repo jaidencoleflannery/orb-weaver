@@ -1,10 +1,10 @@
-#include <stdlib.h>
-#include <stdbool.h>
 #include <pthread.h>
 #include <netdb.h>
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <stdbool.h>
+#include <stdlib.h>
 
 #include "types/thread-types/thread_types.h"
 #include "services/logging/logging.h"
@@ -23,10 +23,10 @@ static connection_instance *queue_head;
 static connection_instance **queue_tail = &queue_head;
 static int num_connections = 0;
 
-static bool process_request(int socket_descriptor);
-static bool pull_next_task(int result);
-static bool get_request_headers(char *buffer, int socket_descriptor, int32_t *total_bytes_read);
-static bool get_request_contents(char *buffer, int socket_descriptor, char *content_length_header, int32_t *total_byts_read);
+static bool _process_request(int socket_descriptor);
+static bool _pull_next_task(int *result);
+static bool _get_request_headers(char *buffer, int socket_descriptor, int32_t *total_bytes_read);
+static bool _get_request_contents(char *buffer, int socket_descriptor, char *content_length_header, int32_t *total_byts_read);
 
 /*
  * thread_handler implements the producer consumer pattern.
@@ -57,7 +57,7 @@ static void *thread_runner(void *arg) {
             DEBUG_LOG("thread_runner: Thread %lu was awoken - acting on task in queue.", (unsigned long)pthread_self());
 
             int socket_descriptor = -1;
-            if(!pull_next_task(socket_descriptor)) {
+            if(!_pull_next_task(&socket_descriptor)) {
                 ERROR_LOG("thread_runner: Failed to fetch socket_descriptor from queue, error encountered on thread %lu.", (unsigned long)pthread_self());
                 pthread_mutex_unlock(&thread_lock);
                 if(socket_descriptor != -1)
@@ -68,7 +68,7 @@ static void *thread_runner(void *arg) {
         pthread_mutex_unlock(&thread_lock);
         
         DEBUG_LOG("thread_runner: Processing task %d.", socket_descriptor);
-        if(!process_request(socket_descriptor)) {
+        if(!_process_request(socket_descriptor)) {
             ERROR_LOG("thread_runner: Unable to process request on thread %lu.", (unsigned long)pthread_self());
             if(socket_descriptor != -1)
                 close(socket_descriptor);
@@ -129,21 +129,21 @@ bool free_thread_memory(void) {
  * + fetch the foremost task from the queue.
  * returns the file descriptor for the connection via the address parameter.
 */
-static bool pull_next_task(int result) {
+static bool _pull_next_task(int *result) {
     // guarantee queue ordering.
     pthread_mutex_lock(&enqueue_lock);
 
         connection_instance *task = queue_head->next;
         if(task == NULL) {
-            ERROR_LOG("pull_next_task: Failure, no task found.");
+            ERROR_LOG("_pull_next_task: Failure, no task found.");
             pthread_mutex_unlock(&enqueue_lock);
             return false;
         }
 
-        result = task->socket_descriptor;
-        if(result < 0) {
-            ERROR_LOG("pull_next_task: Failure, socket descriptor in queue was invalid, clearing task from queue.");
-            result = -1; // pop + free node and return a placeholder node via following logic.
+        *result = task->socket_descriptor;
+        if(*result < 0) {
+            ERROR_LOG("_pull_next_task: Failure, socket descriptor in queue was invalid, clearing task from queue.");
+            *result = -1; // pop + free node and return a placeholder node via following logic.
         }
 
         // pop node.
@@ -161,46 +161,48 @@ static bool pull_next_task(int result) {
     pthread_mutex_unlock(&enqueue_lock); 
 
     // signal validity of data to caller.
-    return (result > -1);
+    return (*result > -1);
 }
 
 /*
  * + load headers and body into buffer.
  * + pass unvalidated data straight to processor.
+ * + relay data, then return value from target server.
 */
-static bool process_request(int socket_descriptor) {
+static bool _process_request(int socket_descriptor) {
     char *buffer = calloc(1, RECEIVE_BUFFER_SIZE);
     if(buffer == NULL) {
-        ERROR_LOG("process_request: Error, failed to allocate memory for buffer on thread %lu.", (unsigned long)pthread_self());
+        ERROR_LOG("_process_request: Error, failed to allocate memory for buffer on thread %lu.", (unsigned long)pthread_self());
         return false;
     }
 
     int32_t total_bytes_read = 0;
 
-    if(!get_request_headers(buffer, socket_descriptor, &total_bytes_read)) {
-        ERROR_LOG("process_request: Error, failed to parse header from request from socket %d on thread %lu.", socket_descriptor, (unsigned long)pthread_self());
+    if(!_get_request_headers(buffer, socket_descriptor, &total_bytes_read)) {
+        ERROR_LOG("_process_request: Error, failed to parse header from request from socket %d on thread %lu.", socket_descriptor, (unsigned long)pthread_self());
         return false;
     }
 
     char *content_length_header = strstr(buffer, CONTENT_LENGTH_HEADER);
     // conditional incase of get request.
     if(content_length_header != NULL) {
-        if(!get_request_contents(buffer, socket_descriptor, content_length_header, &total_bytes_read)) {
-            ERROR_LOG("process_request: Error, failed to parse header from request from socket %d on thread %lu.", socket_descriptor, (unsigned long)pthread_self());
+        if(!_get_request_contents(buffer, socket_descriptor, content_length_header, &total_bytes_read)) {
+            ERROR_LOG("_process_request: Error, failed to parse header value from socket %d on thread %lu.", socket_descriptor, (unsigned long)pthread_self());
             return false;
         }
     }
 
-    DEBUG_LOG("process_request: Message received, attempting to process request.");
+    DEBUG_LOG("_process_request: Message received, attempting to process request.");
 
     http_request *response_buffer = calloc(1, MAX_RESPONSE_SIZE);
     if(response_buffer == NULL) {
-        ERROR_LOG("process_request: Failed to allocate memory for response buffer.");
+        ERROR_LOG("_process_request: Failed to allocate memory for response buffer.");
         return false;
     }
 
+    // route request, wait for response, return value from target.
     if(!process_http_request(socket_descriptor, buffer, total_bytes_read, &response_buffer)) {
-        ERROR_LOG("process_request: Failed to invoke response on thread %lu.", (unsigned long)pthread_self());
+        ERROR_LOG("_process_request: Failed to invoke response on thread %lu.", (unsigned long)pthread_self());
         if(response_buffer != NULL)
             free(response_buffer);
         if(buffer != NULL)
@@ -292,7 +294,7 @@ bool init_thread_handler(void) {
     return true;
 }
 
-bool get_request_headers(char *buffer, int socket_descriptor, int32_t *total_bytes_read) {
+static bool _get_request_headers(char *buffer, int socket_descriptor, int32_t *total_bytes_read) {
     char header_buffer[MAX_HEADER_SIZE] = { 0 }; 
     // header values.
     // end of http header is signalled by double new carriage.
@@ -327,17 +329,17 @@ bool get_request_headers(char *buffer, int socket_descriptor, int32_t *total_byt
     return true;
 }
 
-static bool get_request_contents(char *buffer, int socket_descriptor, char *content_length_header, int32_t *total_bytes_read) {
+static bool _get_request_contents(char *buffer, int socket_descriptor, char *content_length_header, int32_t *total_bytes_read) {
     errno = 0;
     size_t content_length = strtoul((content_length_header + CONTENT_LENGTH_HEADER_LENGTH), NULL, 10);
     if(errno != 0) {
-        ERROR_LOG("process_request: Invalid data, content length could not be parsed on thread %lu. Error: %s", (unsigned long)pthread_self(), strerror(errno));
+        ERROR_LOG("_get_request_contents: Invalid data, content length could not be parsed on thread %lu. Error: %s", (unsigned long)pthread_self(), strerror(errno));
         free(buffer);
         return false;
     }
 
     if(content_length > RECEIVE_BUFFER_SIZE) {
-        ERROR_LOG("process_request: Failure, content length was larger than allowed buffer size on thread %lu.", (unsigned long)pthread_self());
+        ERROR_LOG("_get_request_contents: Failure, content length was larger than allowed buffer size on thread %lu.", (unsigned long)pthread_self());
         free(buffer);
         return false;
     }
@@ -356,7 +358,7 @@ static bool get_request_contents(char *buffer, int socket_descriptor, char *cont
                 receive_buffer_size = content_length - body_bytes_read;
 
             if(!receive_data(socket_descriptor, 0, (receive_buffer_size), body_buffer, &num_bytes_read)) {
-                ERROR_LOG("process_request: Failed to receive data on thread %lu.", (unsigned long)pthread_self());
+                ERROR_LOG("_get_request_contents: Failed to receive data on thread %lu.", (unsigned long)pthread_self());
                 free(buffer);
                 return false;
             }
@@ -365,7 +367,7 @@ static bool get_request_contents(char *buffer, int socket_descriptor, char *cont
 
             // end of data.
             if(num_bytes_read < 1) {
-                DEBUG_LOG("process_request: Connection was closed on thread %lu.", (unsigned long)pthread_self());
+                DEBUG_LOG("_get_request_contents: Connection was closed on thread %lu.", (unsigned long)pthread_self());
                 break;
             }
 

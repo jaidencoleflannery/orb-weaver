@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.20)
 project(
     orb 
     VERSION 1.0
-    DESCRIPTION "An efficient HTTP server for MacOS, built in C."
+    DESCRIPTION "A multithreaded HTTP reverse proxy."
     LANGUAGES C
 )
 

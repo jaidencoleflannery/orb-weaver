@@ -30,7 +30,7 @@ bool allocate_http_request(http_request **http_request_instance) {
     }
 
     (*http_request_instance)->http_route_size = 0;
-    (*http_request_instance)->http_route = calloc(1, sizeof(char *) * MAX_HTTP_HEADER_SIZE);
+    (*http_request_instance)->http_route = calloc(1, sizeof(char *) * MAX_HTTP_HEADER_LINE_SIZE);
     if((*http_request_instance)->http_route == NULL) {
         ERROR_LOG("allocate_http_request: Failed to allocate memory for http_route.");
         return false;

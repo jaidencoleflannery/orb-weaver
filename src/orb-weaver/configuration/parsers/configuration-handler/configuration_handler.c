@@ -22,7 +22,7 @@ configuration config = (configuration){
 
 // TODO: parse max_num_routes from config (not currently setup).
 
-static bool validate_field_name(char *name, cfg_entry *entry_field) {
+static bool _validate_field_name(char *name, cfg_entry *entry_field) {
     const cfg_entry *valid_entries = cfg_entries;
     while(valid_entries->name != NULL) {
         if(strcmp(name, valid_entries->name) == 0) {
@@ -34,7 +34,7 @@ static bool validate_field_name(char *name, cfg_entry *entry_field) {
     return false;
 }
 
-static bool find_enum_row(config_values target, cfg_entry *entry_field) {
+static bool _find_enum_row(config_values target, cfg_entry *entry_field) {
     const cfg_entry *valid_entries = cfg_entries;
     while(valid_entries->type != CONFIG_NULL) {
         if(target == valid_entries->type) {
@@ -46,7 +46,7 @@ static bool find_enum_row(config_values target, cfg_entry *entry_field) {
     return false;
 }
 
-static bool parse_configuration(void) { 
+static bool _parse_configuration(void) { 
     // validate folder path.
     struct stat status;
     if(stat(CONFIG_FOLDER, &status) != 0) {
@@ -66,20 +66,33 @@ static bool parse_configuration(void) {
         char *line_cursor = line;
 
         char field_name_cache[MAX_FIELD_LENGTH] = { 0 };
+        size_t field_name_length = 0;
         // get field name. 
-        for(int char_index = 0; char_index < MAX_FIELD_LENGTH; char_index++) {
-            if(*line_cursor == ' ')
+        while(field_name_length < MAX_FIELD_LENGTH) {
+            if(*line_cursor == ' ' 
+            || *line_cursor == '\n' 
+            ||*line_cursor  == '\r')
                 break;
 
-            field_name_cache[char_index] = *line_cursor;
+            if(*line_cursor > 127) {
+                ERROR_LOG("Failure, configuration values were invalid. Only ASCII characters are permitted.");
+                return false;
+            }
+
+            field_name_cache[field_name_length] = *line_cursor;
+            ++field_name_length;
             ++line_cursor;
         }
+
+        // ignore (mostly) empty lines. 
+        if(field_name_length < 2)
+            continue;
 
         DEBUG_LOG("initialize_configuration: Read configuration field name: `%s`.", field_name_cache);
 
         cfg_entry entry_field;
 
-        if(!validate_field_name(field_name_cache, &entry_field)) {
+        if(!_validate_field_name(field_name_cache, &entry_field)) {
             ERROR_LOG("Could not validate name of configuration field: `%s`.", field_name_cache);
             return false;
         }
@@ -133,7 +146,7 @@ static bool parse_configuration(void) {
         }
 
         memcpy((unsigned char *)&config + entry_field.offset, &value, sizeof(value));
-        LOG("[ Configuration ]", "Set value `%s` = %zu.", field_name_cache, value);
+        LOG("[ CONFIGURATION ]", "Set value `%s` = %zu.", field_name_cache, value);
         DEBUG_LOG("Value directly from cache: %zu, %zu.", config.max_connections, config.port);
     } 
      
@@ -141,7 +154,7 @@ static bool parse_configuration(void) {
 }
 
 bool initialize_configuration(void) {
-    if(!parse_configuration()) {
+    if(!_parse_configuration()) {
         ERROR_LOG("Error parsing configuration, defaulting to default configuration.");
         return false;
     }
@@ -177,7 +190,7 @@ bool initialize_configuration(void) {
 
 bool fetch_configuration_by_name(char *target, size_t *value) {
     cfg_entry entry_field;
-    if(!validate_field_name(target, &entry_field)) {
+    if(!_validate_field_name(target, &entry_field)) {
         ERROR_LOG("Field name was invalid.");
         return false;
     }
@@ -187,7 +200,7 @@ bool fetch_configuration_by_name(char *target, size_t *value) {
 
 bool fetch_configuration_by_enum(config_values target, size_t *value) {
     cfg_entry entry_field;
-    if(!find_enum_row(target, &entry_field)) {
+    if(!_find_enum_row(target, &entry_field)) {
         ERROR_LOG("Field name was invalid.");
         return false;
     }

@@ -10,7 +10,7 @@
 
 // method validation is highly dependent on the http_request_method enum.
 // this validates the entire first line of the http request.
-static bool validate_http_metadata(char *line, size_t line_size, http_request *result_metadata) {
+static bool _validate_http_metadata(char *line, size_t line_size, http_request *result_metadata) {
     if(line == NULL) {
         ERROR_LOG("validate_http_method: Provided method parameter was invalid.");
         return false;
@@ -18,16 +18,16 @@ static bool validate_http_metadata(char *line, size_t line_size, http_request *r
 
     char line_partition[line_size];
 
-    size_t num_parsed       = 0;
-    size_t word_increment   = 0;
+    size_t num_parsed = 0;
+    size_t word_increment = 0;
 
-    size_t method_size      = 0;
-    size_t route_size       = 0;
-    size_t protocol_size     = 0;
+    size_t method_size = 0;
+    size_t route_size = 0;
+    size_t protocol_size = 0;
 
     char *line_cursor = line;
     while(line_cursor != NULL) {
-        if(num_parsed > line_size || num_parsed > MAX_HTTP_HEADER_SIZE) {
+        if(num_parsed > line_size || num_parsed > MAX_HTTP_HEADER_LINE_SIZE) {
             ERROR_LOG("validate_http_method: Provided line exceeded the maximum header size.");
             return false;
         }
@@ -142,41 +142,45 @@ static bool validate_http_metadata(char *line, size_t line_size, http_request *r
 }
 
 // validate a single header.
-static bool validate_http_header(char *header, size_t header_size, http_request *result_metadata) {
+static bool _validate_http_header(char *header, size_t header_size, http_request *result_metadata) {
     if(header == NULL) {
-        ERROR_LOG("validate_http_header: Provided header parameter was invalid.");
+        ERROR_LOG("_validate_http_header: Provided header parameter was invalid.");
         return false;
     }
 
-    // storage for parsed header.
+    // storage for parsed header (atomic).
     http_request_header *result = (http_request_header *)calloc(1, sizeof(http_request_header)); 
     if(result == NULL) {
-        ERROR_LOG("validate_http_header: Failed to allocate memory for header result.");
+        ERROR_LOG("_validate_http_header: Failed to allocate memory for header result.");
         return false;
     }
 
     result->value = (char *)calloc(1, sizeof(header_size));
+
+    result->key = (char *)calloc(1, sizeof(header_size));
     if(result->key == NULL) {
-        ERROR_LOG("validate_http_header: Failed to allocate memory for header result value.");
+        ERROR_LOG("_validate_http_header: Failed to allocate memory for header result value.");
         return false;
     }
 
-    char key[header_size];
-    char value[header_size];
-    int num_parsed;
+    // for atomic safety.
+    char key_cache[header_size];
+    char value_cache[header_size];
+    uint32_t cache_cursor = 0;
 
     // flag for three portions of header.
     header_status flag = IS_KEY;
 
     // flag for end of line.
     bool end_flag = false;
+    int num_parsed;
 
-    char *header_cursor = header;
+    char *header_cursor = header; 
     while(header_cursor != NULL) {  
         // end of key sentinel, set status flags.
         if(*header_cursor == ':') { 
             if(flag != IS_KEY) {
-                ERROR_LOG("validate_http_header: Header was malformed.");
+                ERROR_LOG("_validate_http_header: Header was malformed.");
                 return false;
             }
 
@@ -188,17 +192,17 @@ static bool validate_http_header(char *header, size_t header_size, http_request 
         // end of key reached, if syntax is correct store the value and clear cache.
         if(*header_cursor == ' ') { 
             if(flag != IS_ASSIGNING) {
-                ERROR_LOG("validate_http_header: Header was malformed.");
-                return false;
-            }        
-
-            result->key = calloc(1, num_parsed);
-            if(result->key == NULL) {
-                ERROR_LOG("validate_http_header: Failed to allocate memory for header result key.");
+                ERROR_LOG("_validate_http_header: Header was malformed.");
                 return false;
             }
 
-            memcpy(result->key, key, num_parsed);
+            result->key = calloc(1, num_parsed);
+            if(result->key == NULL) {
+                ERROR_LOG("_validate_http_header: Failed to allocate memory for header result key.");
+                return false;
+            }
+
+            memcpy(result->key, key_cache, num_parsed);
 
             flag = IS_VALUE;
             ++header_cursor;
@@ -208,13 +212,13 @@ static bool validate_http_header(char *header, size_t header_size, http_request 
 
         // last character was ':' but this character was not ' '.
         if(flag == IS_ASSIGNING && *header_cursor != ' ') {
-            ERROR_LOG("validate_http_header: Header was malformed.");
+            ERROR_LOG("_validate_http_header: Header was malformed.");
             return false;
         }
 
         if(*header_cursor == '\r') {
             if(flag != IS_VALUE) {
-                ERROR_LOG("validate_http_header: Header was malformed.");
+                ERROR_LOG("_validate_http_header: Header was malformed.");
                 return false;
             }
 
@@ -224,9 +228,9 @@ static bool validate_http_header(char *header, size_t header_size, http_request 
 
         // assign values if we pass the validations.
         if(flag == IS_KEY)
-            memcpy(key, header_cursor, num_parsed);
+            key_cache[cache_cursor] = *header_cursor;
         else if(flag == IS_VALUE)
-            memcpy(value, header_cursor, num_parsed);
+            value_cache[cache_cursor] = *header_cursor;
 
         ++header_cursor;
         ++num_parsed;
@@ -236,81 +240,78 @@ static bool validate_http_header(char *header, size_t header_size, http_request 
 }
 
 // request metadata (line 0) is considered a header here.
-static bool get_http_metadata(char *message, size_t message_size, http_request **result_metadata) {
-    if(message == NULL 
-    || result_metadata == NULL 
+// \r\n\r\n has already been stripped out at this stage.
+static bool _get_http_metadata(char *raw, size_t raw_size, http_request **result_metadata) {
+    if(raw == NULL
+    || result_metadata == NULL
     || *result_metadata == NULL
-    || message_size == 0) {
-        ERROR_LOG("get_http_metadata: Parameter provided was invalid.");
+    || raw_size == 0
+    || raw_size > (MAX_HTTP_HEADER_TOTAL_SIZE)) {
+        ERROR_LOG("_get_http_metadata: Parameter provided was invalid.");
         return false;
     }
 
-    char *message_cursor = message;
-    bool end_flag = false;
+    char *raw_cursor = raw;
+    char header_line[MAX_HTTP_HEADER_LINE_SIZE] = { 0 };
+    uint32_t line_increment = 0; // to validate entry in method header line.
+    uint32_t num_parsed = 0;
 
-    char header_line[MAX_HTTP_HEADER_SIZE];
-    size_t line_increment = 0; // to validate entry in method header line. 
-    size_t num_parsed = 0; 
-
-    // get first line (method metadata).
-    // '\r\n' denotes end of line, conditional validation within block is reliant on this.
-    while(message_cursor != NULL) {
-        if(num_parsed == MAX_HTTP_HEADER_SIZE ) {
-            ERROR_LOG("get_http_metadata: Provided HTTP request's header value exceeded the maximum length of %d.", MAX_HTTP_HEADER_SIZE);
+    while(raw_cursor != NULL) {
+        if(num_parsed == MAX_HTTP_HEADER_LINE_SIZE ) {
+            ERROR_LOG("_get_http_metadata: Provided HTTP request's header value exceeded the maximum length of %d.", MAX_HTTP_HEADER_LINE_SIZE);
             return false;
         }
+ 
+        if(*raw_cursor != '\r') {
 
-        if(*message_cursor == '\r') {
-            // '\r' marks the new carriage and is only valid for the end of a line (ie header value).
-            // '\r' must be followed by '\n'.
-            end_flag = true;
-            ++message_cursor;
-            continue;
-        }
+            header_line[num_parsed] = *raw_cursor;
+            ++num_parsed;
+            ++raw_cursor;
 
-        // end of line logic.
-        if((*message_cursor == '\n' && end_flag != true) 
-        || (*message_cursor != '\n' && end_flag == true)) {
-            // TODO: setup a path for bad requests.
-            ERROR_LOG("get_http_metadata: Provided HTTP request line was malformed.");
-            return false; 
-        } else if(*message_cursor == '\n' && end_flag == true) {
-            bool validation_result = false;
-            if(line_increment < 1) // if first line, get method.
-                validation_result = validate_http_metadata(header_line, num_parsed, *result_metadata); 
-            else // else, parse current header.
-                validation_result = validate_http_header(header_line, num_parsed, *result_metadata);
+        } else { // end of line logic.
 
-            if(!validation_result) {
-                ERROR_LOG("get_http_metadata: Provided HTTP request's method or headers vere invalid.");
+            // '\r\n' marks the new carriage and is only valid for the end of a line (ie header value).
+            if((raw_cursor + 1) != NULL
+            && *(raw_cursor + 1) == '\n') {
+                bool validation_result = false; 
+                if(line_increment < 1) // if first line, get method - this stores the parsed value.
+                    validation_result = _validate_http_metadata(header_line, num_parsed, *result_metadata);
+                else // else, parse current header - this stores the parsed value.
+                    validation_result = _validate_http_header(header_line, num_parsed, *result_metadata);
+
+                if(!validation_result) {
+                    ERROR_LOG("_get_http_metadata: Provided HTTP request's method or headers vere invalid.");
+                    return false;
+                }
+
+                // clear values so next iteration is clean.
+                memset(header_line, 0, sizeof(header_line));
+                num_parsed = 0;
+                ++line_increment;
+            } else {
+                ERROR_LOG("Failure, could not parse headers - malformed value was found after a newline character.");
                 return false;
             }
 
-            // clear values so next iteration is clean.
-            memset(header_line, 0, sizeof(header_line));
-            num_parsed = 0;
-            ++line_increment;
+            raw_cursor += 2; // skip '\n'.
+            continue;
         }
 
-        // actual parsing.
-        header_line[num_parsed] = *message_cursor;
-        ++num_parsed;
-        ++message_cursor;
     }
 
     return true;
 }
 
-static bool route_http_request(char *message, size_t message_size, http_request **result_metadata) {
+static bool _route_http_request(char *message, size_t message_size, http_request **result_metadata) {
     if(message == NULL 
     || result_metadata == NULL 
     || *result_metadata == NULL
     || message_size == 0) {
-        ERROR_LOG("get_http_metadata: Parameter provided was invalid.");
+        ERROR_LOG("_get_http_metadata: Parameter provided was invalid.");
         return false;
     }
 
-    DEBUG_LOG("route_http_request: Reached end of current implementation.");
+    DEBUG_LOG("_route_http_request: Reached end of current implementation.");
 
     // TODO: complete this once dynamic routing has been implemented.
     return true;
@@ -331,12 +332,12 @@ bool process_http_request(int socket_descriptor, char *message, size_t message_s
     }
 
     // get, validate and store header values.
-    if(!get_http_metadata(message, message_size, &parsing_result)) {
+    if(!_get_http_metadata(message, message_size, &parsing_result)) {
         ERROR_LOG("process_http_request: Failed to parse http request headers.");
         return false;
     }
 
-    if(!route_http_request(message, message_size, &parsing_result)) {
+    if(!_route_http_request(message, message_size, &parsing_result)) {
         ERROR_LOG("process_http_request: Failed to route HTTP request.");
         return false;
     }
@@ -347,7 +348,7 @@ bool process_http_request(int socket_descriptor, char *message, size_t message_s
         return false;
     }
 
-    // TODO: process routing and respond with html to return to the client.
+    // TODO: process routing and return value in response parameter.
 
     return true;
 }

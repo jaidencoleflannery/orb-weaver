@@ -11,7 +11,7 @@
  * watch for collisions, if one is encountered, just iterate until an empty slot is found.
 */
 
-// find the first empty slot - O(1).
+// find the first empty slot.
 static bool _hash_seek_slot(
     char *key,
     size_t key_size,
@@ -24,7 +24,7 @@ static bool _hash_seek_slot(
     return true;
 }
 
-// find a specific key - O(1).
+// find a specific key.
 static bool _hash_seek_entry(
     char *key, 
     size_t key_size, 

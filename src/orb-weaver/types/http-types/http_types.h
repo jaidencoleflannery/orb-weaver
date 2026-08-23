@@ -1,8 +1,9 @@
 #ifndef HTTP_TYPES_H
 #define HTTP_TYPES_H
 
-#define MAX_HTTP_HEADER_SIZE 8192 // arbitrary.
+#define MAX_HTTP_HEADER_LINE_SIZE 8192 // arbitrary.
 #define MAX_HTTP_HEADER_COUNT 100 // arbitrary.
+#define MAX_HTTP_HEADER_TOTAL_SIZE MAX_HTTP_HEADER_LINE_SIZE * MAX_HTTP_HEADER_COUNT
 
 #define MAX_HTTP_BODY_SIZE 1.049e6f // arbitrary.
 
@@ -24,11 +25,11 @@ typedef enum {
 } http_request_method;
 
 typedef struct { 
-    size_t  key_size;
-    size_t  value_size;
-    char    *key; 
-    char    *value;
-    bool    valid;
+    size_t key_size;
+    size_t value_size;
+    char   *key; 
+    char   *value;
+    bool   valid;
 } http_request_header;
 
 typedef struct {
@@ -38,8 +39,8 @@ typedef struct {
     size_t http_route_size;
     size_t http_headers_size;
     size_t http_body_size;
-    char *http_route;
-    char *http_body;
+    char   *http_route;
+    char   *http_body;
 } http_request;
 
 bool allocate_http_request(http_request **http_request_instance);
