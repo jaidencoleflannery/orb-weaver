@@ -240,6 +240,8 @@ static bool _validate_http_header(char *header, size_t header_size, bool *host_f
         return false;
     }
 
+    result->valid = true;
+
     return true;
 }
 
@@ -301,8 +303,15 @@ static bool _get_http_metadata(char *raw, size_t raw_size, http_request **result
             }
 
             // '\r\n' marks the new carriage and is only valid for the end of a line (ie header value).
-            if((raw_cursor + 1) != NULL
+            if(*raw_cursor == '\r'
+            && (raw_cursor + 1)
             && *(raw_cursor + 1) == '\n') {
+                if(!(raw_cursor + 2)
+                || !(raw_cursor + 3)) {
+                    ERROR_LOG("Failure, header values were malformed. Section ended without a proper double new carriage partition.");
+                    return false;
+                } 
+
                 if(line_increment < 1) { // if first line, get method - this stores the parsed value.
                     if(!_validate_http_metadata(header_line, num_parsed, *result_metadata)) {
                         ERROR_LOG("HTTP metadata within request was invalid, denying request.");
@@ -324,6 +333,11 @@ static bool _get_http_metadata(char *raw, size_t raw_size, http_request **result
                     validated_headers[validated_cursor] = raw_header;
                     ++validated_cursor; 
                 }
+
+                // end if followed by final double new carriage to end header section.
+                if(*(raw_cursor + 2) == '\r'
+                && *(raw_cursor + 3) == '\n')
+                    break;
 
                 // clear values so next iteration is clean.
                 memset(header_buffer, 0, MAX_HTTP_HEADER_LINE_SIZE);
