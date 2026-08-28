@@ -39,7 +39,7 @@ typedef struct {
     uint32_t              num_headers;
     size_t                http_route_size;
     size_t                http_headers_size;
-    size_t                http_body_size; 
+    size_t                http_body_size;
     char                  *http_route;
     char                  *http_body; 
     char                  *http_host;

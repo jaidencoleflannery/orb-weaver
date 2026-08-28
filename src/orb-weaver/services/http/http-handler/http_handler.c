@@ -369,10 +369,10 @@ static bool _get_http_metadata(char *raw, size_t raw_size, http_request **result
 }
 
 static bool _route_http_request(char *message, size_t message_size, http_request **result_metadata) {
-    if(message == NULL 
-    || result_metadata == NULL 
-    || *result_metadata == NULL
-    || message_size == 0) {
+    if(!message
+    || !result_metadata
+    || !(*result_metadata)
+    || !message_size) {
         ERROR_LOG("_get_http_metadata: Parameter provided was invalid.");
         return false;
     }
