@@ -58,7 +58,7 @@ bool free_http_request(http_request *http_request_instance) {
     }
 
     // clear any allocation the caller performed.
-    http_request_header *header_cursor = http_request_instance->http_headers;
+    http_request_header *header_cursor = *(http_request_instance->http_headers);
     while(header_cursor != NULL) {
         free(header_cursor);
         if(header_cursor != NULL) {
