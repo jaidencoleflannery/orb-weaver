@@ -6,12 +6,7 @@
 
 #include "./hash_tools.h"
 
-/*
- * TODO:
- * watch for collisions, if one is encountered, just iterate until an empty slot is found.
-*/
-
-static bool _hash_seek_entry(char *key, size_t key_size, hash_entry **table, size_t table_size, size_t hash_index, size_t result_index);
+static bool _hash_seek_entry(char *key, size_t key_size, hash_entry **table, size_t table_size, size_t hash_index, size_t *result_index);
 static bool _generate_hash_index(char *key, size_t key_size, size_t table_size, size_t *hash_index);
 
 // add entry. 
@@ -115,8 +110,8 @@ bool hash_remove_entry(
         free(table[hash_index]);
     } else { // if not found, see if elsewhere.
         size_t result_index = table_size;
-        if(!_hash_seek_entry(key, key_size, table, table_size, hash_index, result_index)
-        || result_index > table_size) {
+        if(!_hash_seek_entry(key, key_size, table, table_size, hash_index, &result_index)
+        || result_index >= table_size) {
             ERROR_LOG("hash_remove_entry: Failure, unable to locate key in hash table.");
             return false;
         }
@@ -154,9 +149,23 @@ bool hash_fetch_entry(
         return false;
     }
 
-    if(table[hash_index] == NULL) {
+    if(!table[hash_index]) {
+        size_t result_index = (table_size);
+        if(!_hash_seek_entry(key, key_size, table, table_size, hash_index, &result_index)
+        || result_index >= table_size) {
+            ERROR_LOG("hash_fetch_entry: Failure, unable to locate key in hash table.");
+            return false;
+        }
+
+        hash_index = result_index;
     }
 
+    if(table[hash_index]) {
+        return *table[hash_index]->value;
+    } else {
+        ERROR_LOG("hash_fetch_entry: Unexpected error, hash fetch logic fell through to an invalid state.");
+        return false;
+    }
 }
 
 bool hash_free(hash_entry **table, size_t table_size) {
@@ -202,15 +211,29 @@ bool hash_allocate(size_t num_entries, hash_entry **table) {
 
 // find a specific key.
 static bool _hash_seek_entry(
-    char *key, 
-    size_t key_size, 
-    hash_entry **table, 
-    size_t table_size, 
-    size_t hash_index, 
-    size_t result_index
+    char *key,
+    size_t key_size,
+    hash_entry **table,
+    size_t table_size,
+    size_t hash_index,
+    size_t *result_index
 ) {
+    *result_index = table_size;
 
-    return true;
+    size_t probe_counter = hash_index;
+    for(int step_counter = 0; step_counter < table_size; ++step_counter) {
+        if(++probe_counter >= table_size)
+            probe_counter = 0;
+
+        if(table[probe_counter] 
+        && strcmp(table[probe_counter]->key, key) == 0) {
+            *result_index = probe_counter;
+            return true;
+        }
+    }
+
+    ERROR_LOG("hash_seek_entry: Failure, hash value was not found within table.");
+    return false;
 }
 
 static bool _generate_hash_index(
@@ -238,15 +261,15 @@ static bool _generate_hash_index(
     // each iteration scales by salt (prime num) and adds the current character value.
     long keygen_value = 0;
     char *key_cursor = key; 
-    while(key_cursor != NULL && *key_cursor != '\0')
-        keygen_value = keygen_value * KEYGEN_SALT + (long)*key_cursor;
+    while(key_cursor && *key_cursor != '\0')
+        keygen_value = (keygen_value * KEYGEN_SALT + (long)*key_cursor);
 
     if(keygen_value == 0) {
         ERROR_LOG("_generate_hash_index: Unexpected error, generated key hash was not mutated properly.");
         return false;
     }
 
-    // absolute value.
+    // absolute value (scaled to fit in table).
     int keygen_remainder = (keygen_value % table_size);
     *hash_index = (keygen_remainder > 0)
         ? keygen_remainder
@@ -254,3 +277,4 @@ static bool _generate_hash_index(
 
     return true;
 }
+
