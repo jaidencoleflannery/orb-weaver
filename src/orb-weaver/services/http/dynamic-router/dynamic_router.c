@@ -3,32 +3,35 @@
 #include <string.h>
 
 #include "services/logging/logging.h"
-#include "configuration/configuration-handler/configuration_handler.h"
+#include "utilities/hash-tools/hash_tools.h"
+#include "configuration/parsers/configuration-handler/configuration_handler.h"
 
 #include "./dynamic_router.h"
 
 static bool initialized = false;
 
 // never free.
-static route_metadata **configured_routes;
+static hash_entry *configured_routes;
 
 static size_t num_routes = 0;
 static size_t max_num_routes = 0;
 
-static bool _initialize_routes() {
+static bool _get_key(char *path, size_t path_size, http_request_method method, char *key, size_t key_size);
+
+bool initialize() {
     max_num_routes = config.max_num_routes;
     if(max_num_routes < 1) {
-        ERROR_LOG("initialize: Maximum number of routes must be a positive integer.");
-        return false;
+        ERROR_LOG("initialize: Maximum number of routes must be a positive integer greater than zero.");
+        return (initialized = false);
     }
-
-    *configured_routes = (route_metadata *)calloc(1, (config.max_num_routes * sizeof(char *)));
-    if(configured_routes == NULL) {
+ 
+    configured_routes = (hash_entry *)calloc(1, (config.max_num_routes * sizeof(hash_entry)));
+    if(!configured_routes) {
         ERROR_LOG("initialize: Failed to allocate memory for configured_routes.");
-        return false;
-    }
+        return (initialized = false);
+    } 
 
-    return true;
+    return (initialized = true);
 }
 
 // add a new route to table with hash for lookup.
@@ -42,35 +45,57 @@ bool bind_route(
         return false;
     }
 
-    if(configured_routes == NULL) {
+    if(!configured_routes) {
         ERROR_LOG("bind_route: Memory has not been properly allocated for routes.");
         return false;
     }
 
-    if(method >= TYPE_COUNT
-    || path_size < 1
-    || path == NULL) {
+    if(method >= TYPE_COUNT 
+    || !path
+    || path_size < 1) {
         ERROR_LOG("bind_route: Invalid route data was provided.");
         return false;
     }
 
     // allocate and copy.
 
-    configured_routes[num_routes] = (route_metadata *)calloc(1, sizeof(route_metadata) + path_size);
-    if(configured_routes[num_routes] == NULL) {
+    if(num_routes > config.max_num_routes) {
+        ERROR_LOG("bind_route: Maximum number of routes reached (consider augmenting configuration value).");
+        return false;
+    }
+
+    configured_routes[num_routes].value = (route_metadata *)calloc(1, sizeof(route_metadata) + path_size);
+    if(!(configured_routes[num_routes].value)) {
         ERROR_LOG("bind_route: Failed to allocate memory for configured_routes at index [%zu].\n", num_routes);
         return false;
     }
 
-    configured_routes[num_routes] = &(route_metadata) {
-        .method = method,
-        .path_size = path_size 
-    };
-    memcpy(configured_routes[num_routes]->path, path, path_size);
-    if(configured_routes[num_routes] == NULL) {
-        ERROR_LOG("bind_route: Failed to copy path into configured route at index [%zu].\n", num_routes);
+    size_t key_size = (path_size + 1);
+    char key[key_size];
+
+    // concat path + method.
+    if(!_get_key(path, path_size, method, key, key_size)) {
+        ERROR_LOG("Failed to hash and store route, path key could not be properly generated.");
         return false;
-    } 
+    }
+
+    // hash method persists memory (do not allocate).
+    route_metadata metadata = {
+        .method    = method,
+        .path      = path,
+        .path_size = path_size
+    };
+
+    hash_add_entry(
+        key,
+        key_size,
+        &metadata,
+        (sizeof(route_metadata) + path_size)
+    )
+
+
+
+    
 
     ++num_routes;
     return true;
@@ -87,13 +112,27 @@ bool invoke_route(http_request request) {
     return true;
 }
 
-bool initialize() {
-    if(!_initialize_routes()) {
-        ERROR_LOG("initialize: Failed to bind routes.");
+static bool _get_key(
+    char *path, 
+    size_t path_size, 
+    http_request_method method, 
+    char *key, 
+    size_t key_size
+) {
+    // key_size must be larger than path_size so value can be appended.
+    if(key_size <= path_size) {
+        ERROR_LOG("Failed to generate key, key's allocated memory was smaller than the provided path length.");
         return false;
     }
 
-    initialized = true;
+    char *source = path;
+    http_request_method tag = method;
+    while(*source)
+        *key++ = *source++;
+    
+    // append method to path.
+    *(++key) = (char)(tag + '0');
+
     return true;
 }
 

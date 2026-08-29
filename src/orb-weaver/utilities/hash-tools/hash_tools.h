@@ -4,9 +4,9 @@
 #define MAX_KEY_LENGTH 256
 #define KEYGEN_SALT 31
 
-typedef struct { 
-    void *value;
+typedef struct {
     char *key;
+    void *value;
 } hash_entry;
 
 bool hash_allocate(size_t num_entries, hash_entry **result);

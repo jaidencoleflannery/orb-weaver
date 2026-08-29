@@ -11,73 +11,9 @@
  * watch for collisions, if one is encountered, just iterate until an empty slot is found.
 */
 
-// find the first empty slot.
-static bool _hash_seek_slot(
-    char *key,
-    size_t key_size,
-    hash_entry **table,
-    size_t table_size,
-    size_t hash_index,
-    size_t result_index
-) {
-
-    return true;
-}
-
-// find a specific key.
-static bool _hash_seek_entry(
-    char *key, 
-    size_t key_size, 
-    hash_entry **table, 
-    size_t table_size, 
-    size_t hash_index, 
-    size_t result_index
-) {
-
-    return true;
-}
-
-static bool _generate_hash_index(
-    char *key, 
-    size_t key_size, 
-    size_t table_size, 
-    size_t *hash_index
-) {
-    if(key == NULL) {
-        ERROR_LOG("_generate_hash_index: Provided key pointer was NULL.");
-        return false;
-    }
-
-    if(key_size < 1) {
-        ERROR_LOG("_generate_hash_index: Provided key size was invalid, must be a positive integer less than (%d).", MAX_KEY_LENGTH);
-        return false;
-    }
-
-    if(hash_index == NULL) {
-        ERROR_LOG("_generate_hash_index: Provided hash index pointer was NULL.");
-        return false;
-    }
- 
-    // iterate on key index,
-    // each iteration scales by salt (prime num) and adds the current character value.
-    long keygen_value = 0;
-    char *key_cursor = key; 
-    while(key_cursor != NULL && *key_cursor != '\0')
-        keygen_value = keygen_value * KEYGEN_SALT + (long)*key_cursor;
-
-    if(keygen_value == 0) {
-        ERROR_LOG("_generate_hash_index: Unexpected error, generated key hash was not mutated properly.");
-        return false;
-    }
-
-    // absolute value.
-    int keygen_remainder = (keygen_value % table_size);
-    *hash_index = (keygen_remainder > 0)
-        ? keygen_remainder
-        : -(keygen_remainder);
-
-    return true;
-}
+static bool _hash_seek_slot(char *key, size_t key_size, hash_entry **table, size_t table_size, size_t hash_index, size_t result_index);
+static bool _hash_seek_entry(char *key, size_t key_size, hash_entry **table, size_t table_size, size_t hash_index, size_t result_index);
+static bool _generate_hash_index(char *key, size_t key_size, size_t table_size, size_t *hash_index);
 
 // add entry. 
 bool hash_add_entry(
@@ -214,3 +150,70 @@ bool hash_allocate(size_t num_entries, hash_entry **table) {
     return true;
 }
 
+// find the first empty slot.
+static bool _hash_seek_slot(
+    char *key,
+    size_t key_size,
+    hash_entry **table,
+    size_t table_size,
+    size_t hash_index,
+    size_t result_index
+) {
+
+    return true;
+}
+
+// find a specific key.
+static bool _hash_seek_entry(
+    char *key, 
+    size_t key_size, 
+    hash_entry **table, 
+    size_t table_size, 
+    size_t hash_index, 
+    size_t result_index
+) {
+
+    return true;
+}
+
+static bool _generate_hash_index(
+    char *key, 
+    size_t key_size, 
+    size_t table_size, 
+    size_t *hash_index
+) {
+    if(key == NULL) {
+        ERROR_LOG("_generate_hash_index: Provided key pointer was NULL.");
+        return false;
+    }
+
+    if(key_size < 1) {
+        ERROR_LOG("_generate_hash_index: Provided key size was invalid, must be a positive integer less than (%d).", MAX_KEY_LENGTH);
+        return false;
+    }
+
+    if(hash_index == NULL) {
+        ERROR_LOG("_generate_hash_index: Provided hash index pointer was NULL.");
+        return false;
+    }
+ 
+    // iterate on key index,
+    // each iteration scales by salt (prime num) and adds the current character value.
+    long keygen_value = 0;
+    char *key_cursor = key; 
+    while(key_cursor != NULL && *key_cursor != '\0')
+        keygen_value = keygen_value * KEYGEN_SALT + (long)*key_cursor;
+
+    if(keygen_value == 0) {
+        ERROR_LOG("_generate_hash_index: Unexpected error, generated key hash was not mutated properly.");
+        return false;
+    }
+
+    // absolute value.
+    int keygen_remainder = (keygen_value % table_size);
+    *hash_index = (keygen_remainder > 0)
+        ? keygen_remainder
+        : -(keygen_remainder);
+
+    return true;
+}
