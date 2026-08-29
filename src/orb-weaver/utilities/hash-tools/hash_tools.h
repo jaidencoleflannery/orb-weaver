@@ -5,9 +5,21 @@
 #define KEYGEN_SALT 31
 
 typedef struct {
-    char *key;
-    void *value;
+    size_t key_size;
+    size_t value_size;
+    char   *key;
+    char   *value;
 } hash_entry;
+
+bool hash_add_entry(
+    char       *key, 
+    size_t     key_size, 
+    void       *value, 
+    size_t     value_size, 
+    hash_entry **table, 
+    size_t     table_size, 
+    size_t     *hash_index // out parameter.
+);
 
 bool hash_allocate(size_t num_entries, hash_entry **result);
 

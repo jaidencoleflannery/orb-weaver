@@ -9,7 +9,7 @@
 typedef struct {
     http_request_method method;
     size_t path_size;
-    char *path;
+    char path[]; // always store inline.
 } route_metadata;
 
 typedef struct {   

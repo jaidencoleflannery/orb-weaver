@@ -24,12 +24,12 @@ bool initialize() {
         ERROR_LOG("initialize: Maximum number of routes must be a positive integer greater than zero.");
         return (initialized = false);
     }
- 
-    configured_routes = (hash_entry *)calloc(1, (config.max_num_routes * sizeof(hash_entry)));
+
+    hash_allocate(config.max_num_routes, &configured_routes);
     if(!configured_routes) {
         ERROR_LOG("initialize: Failed to allocate memory for configured_routes.");
         return (initialized = false);
-    } 
+    }
 
     return (initialized = true);
 }
@@ -57,13 +57,12 @@ bool bind_route(
         return false;
     }
 
-    // allocate and copy.
-
     if(num_routes > config.max_num_routes) {
         ERROR_LOG("bind_route: Maximum number of routes reached (consider augmenting configuration value).");
         return false;
     }
 
+    // allocate route slot.
     configured_routes[num_routes].value = (route_metadata *)calloc(1, sizeof(route_metadata) + path_size);
     if(!(configured_routes[num_routes].value)) {
         ERROR_LOG("bind_route: Failed to allocate memory for configured_routes at index [%zu].\n", num_routes);
@@ -75,27 +74,38 @@ bool bind_route(
 
     // concat path + method.
     if(!_get_key(path, path_size, method, key, key_size)) {
-        ERROR_LOG("Failed to hash and store route, path key could not be properly generated.");
+        ERROR_LOG("bind_route: Failed to hash and store route, path key could not be properly generated.");
         return false;
     }
 
-    // hash method persists memory (do not allocate).
-    route_metadata metadata = {
-        .method    = method,
-        .path      = path,
-        .path_size = path_size
-    };
+    // hash method persists memory, keep struct flat to avoid loss.
+    size_t metadata_size = (sizeof(route_metadata) + path_size);
+    route_metadata *metadata = (route_metadata *)calloc(1, metadata_size);
+    if(!metadata) {
+        ERROR_LOG("bind_route: Error, failed allocate memory for route value storage.");
+        return false;
+    }
 
-    hash_add_entry(
+    metadata->method = method;
+    metadata->path_size = path_size;
+    memcpy(metadata->path, path, path_size);
+
+    size_t hash_index = -1;
+
+    if(!hash_add_entry(
         key,
         key_size,
         &metadata,
-        (sizeof(route_metadata) + path_size)
-    )
+        metadata_size,
+        &configured_routes,
+        config.max_num_routes,
+        &hash_index
+    )) {
+        ERROR_LOG("bind_route: Failed to add route entry to hash table.");
+        return false;
+    }
 
-
-
-    
+    if()
 
     ++num_routes;
     return true;
