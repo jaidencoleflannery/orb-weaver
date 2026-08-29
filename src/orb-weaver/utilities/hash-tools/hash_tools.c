@@ -35,12 +35,12 @@ bool hash_add_entry(
     }
 
     // generate hash index.
-    *hash_index = -1;
+    *hash_index = table_size;
     if(!_generate_hash_index(key, key_size, table_size, hash_index)) {
         ERROR_LOG("hash_add_entry: Failed to generate hash key for provided entry values.");
         *hash_index = 0;
         return false;
-    } else if(*hash_index == -1) {
+    } else if(*hash_index > table_size) {
         ERROR_LOG("hash_add_entry: Unexpected error, generated hash key was invalid.");
         return false;
     } else if(*hash_index >= table_size) {
@@ -102,7 +102,7 @@ bool hash_remove_entry(
         return false;
     }
 
-    size_t hash_index = -1;
+    size_t hash_index = table_size;
     if(!_generate_hash_index(key, key_size, table_size, &hash_index)) {
         ERROR_LOG("hash_remove_entry: Failed to generate a hash index from provided values.");
         return false;
@@ -111,9 +111,10 @@ bool hash_remove_entry(
         return false;
     }
 
-    // if not found, see if elsewhere.
-    if((*table)[hash_index].key == NULL) {
-        size_t result_index = (table_size + 1);
+    if(table[hash_index]) {
+        free(table[hash_index]);
+    } else { // if not found, see if elsewhere.
+        size_t result_index = table_size;
         if(!_hash_seek_entry(key, key_size, table, table_size, hash_index, result_index)
         || result_index > table_size) {
             ERROR_LOG("hash_remove_entry: Failure, unable to locate key in hash table.");
@@ -123,12 +124,7 @@ bool hash_remove_entry(
         hash_index = result_index;
     }
 
-    if((*table)[hash_index].key != NULL)
-        free((*table)[hash_index].key);
-    if((*table)[hash_index].value != NULL)
-        free((*table)[hash_index].value);
-
-    memset((*table + hash_index), 0, sizeof(hash_entry)); 
+    memset(table[hash_index], 0, sizeof(hash_entry)); 
     return true;
 }
 
@@ -149,7 +145,7 @@ bool hash_fetch_entry(
         return false;
     }
 
-    size_t hash_index = -1;
+    size_t hash_index = table_size;
     if(!_generate_hash_index(key, key_size, table_size, &hash_index)) {
         ERROR_LOG("hash_fetch_entry: Failed to generate a hash index from provided values.");
         return false;
