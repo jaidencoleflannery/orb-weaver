@@ -10,6 +10,47 @@
 
 bool _clean_header(http_request_header **header_instance);
 
+static bool _validate_http_metadata(char *line, size_t line_size, http_request *result_metadata);
+static bool _validate_http_header(char *header, size_t header_size, bool *host_found, http_request_header **result_header); 
+static bool _get_http_metadata(char *raw, size_t raw_size, http_request **result_metadata);
+static bool _route_http_request(char *message, size_t message_size, http_request **result_metadata);
+
+// orchestrator for http request handling.
+bool process_http_request(int socket_descriptor, char *message, size_t message_size, http_request **response) {
+    if(message == NULL || response == NULL) {
+        ERROR_LOG("process_http_request: Invalid parameter was provided.");
+        return false;
+    }
+
+    // heap alloc.
+    http_request *parsing_result = { 0 };
+    if(!allocate_http_request(&parsing_result)) {
+        ERROR_LOG("process_http_request: Failed to allocate memory for http_request.");
+        return false;
+    }
+
+    // get, validate and store header values.
+    if(!_get_http_metadata(message, message_size, &parsing_result)) {
+        ERROR_LOG("process_http_request: Failed to parse http request headers.");
+        return false;
+    }
+
+    if(!_route_http_request(message, message_size, &parsing_result)) {
+        ERROR_LOG("process_http_request: Failed to route HTTP request.");
+        return false;
+    }
+
+    // free memory.
+    if(!free_http_request(parsing_result)) {
+        ERROR_LOG("process_http_request: Failed to free instance of http_request.");
+        return false;
+    }
+
+    // TODO: process routing and return value in response parameter.
+
+    return true;
+}
+
 // method validation is highly dependent on the http_request_method enum.
 // this validates the entire first line of the http request.
 static bool _validate_http_metadata(char *line, size_t line_size, http_request *result_metadata) {
@@ -383,42 +424,6 @@ static bool _route_http_request(char *message, size_t message_size, http_request
     return true;
 }
 
-// orchestrator for http request handling.
-bool process_http_request(int socket_descriptor, char *message, size_t message_size, http_request **response) {
-    if(message == NULL || response == NULL) {
-        ERROR_LOG("process_http_request: Invalid parameter was provided.");
-        return false;
-    }
-
-    // heap alloc.
-    http_request *parsing_result = { 0 };
-    if(!allocate_http_request(&parsing_result)) {
-        ERROR_LOG("process_http_request: Failed to allocate memory for http_request.");
-        return false;
-    }
-
-    // get, validate and store header values.
-    if(!_get_http_metadata(message, message_size, &parsing_result)) {
-        ERROR_LOG("process_http_request: Failed to parse http request headers.");
-        return false;
-    }
-
-    if(!_route_http_request(message, message_size, &parsing_result)) {
-        ERROR_LOG("process_http_request: Failed to route HTTP request.");
-        return false;
-    }
-
-    // free memory.
-    if(!free_http_request(parsing_result)) {
-        ERROR_LOG("process_http_request: Failed to free instance of http_request.");
-        return false;
-    }
-
-    // TODO: process routing and return value in response parameter.
-
-    return true;
-}
-
 // clean and free data on failure.
 bool _clean_header(http_request_header **header_instance) {
     if(!header_instance
@@ -444,4 +449,5 @@ bool _clean_header(http_request_header **header_instance) {
         && !header->value
     );
 }
+
 
