@@ -8,12 +8,11 @@
 
 #include "./http_handler.h"
 
-bool _clean_header(http_request_header **header_instance);
-
 static bool _validate_http_metadata(char *line, size_t line_size, http_request *result_metadata);
 static bool _validate_http_header(char *header, size_t header_size, bool *host_found, http_request_header **result_header); 
 static bool _get_http_metadata(char *raw, size_t raw_size, http_request **result_metadata);
 static bool _route_http_request(char *message, size_t message_size, http_request **result_metadata);
+static bool _clean_header(http_request_header **header_instance);
 
 // orchestrator for http request handling.
 bool process_http_request(int socket_descriptor, char *message, size_t message_size, http_request **response) {
@@ -425,7 +424,7 @@ static bool _route_http_request(char *message, size_t message_size, http_request
 }
 
 // clean and free data on failure.
-bool _clean_header(http_request_header **header_instance) {
+static bool _clean_header(http_request_header **header_instance) {
     if(!header_instance
     || !*header_instance) {
         ERROR_LOG("Failed to properly clean header after failure. Memory may have leaked.");
