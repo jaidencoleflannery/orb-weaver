@@ -9,37 +9,52 @@
 static bool _hash_seek_entry(char *key, size_t key_size, hash_entry **table, size_t table_size, size_t hash_index, size_t *result_index);
 static bool _generate_hash_index(char *key, size_t key_size, size_t table_size, size_t *hash_index);
 
+/*
+ * basic open address hash map implementation.
+ * never allow the 0th index to be filled (hash index error state).
+*/
+
 // add entry. 
 bool hash_add_entry(
-    char *key, 
-    size_t key_size, 
-    void *value, 
-    size_t value_size, 
-    hash_entry **table, 
-    size_t table_size, 
+    char *key,
+    size_t key_size,
+    void *value,
+    size_t value_size,
+    hash_entry **table,
+    size_t table_size,
     size_t *hash_index // out parameter.
 ) {
-    if(key == NULL) {
-        ERROR_LOG("hash_add_entry: Provided key pointer was NULL.");
+    if(!key
+    || !value 
+    || key_size < 1
+    || value_size < 1) {
+        ERROR_LOG("hash_add_entry: Provided entry values were invalid.");
         return false;
     }
 
-    if(hash_index == NULL) {
-        ERROR_LOG("hash_add_entry: Provided hash_index pointer was NULL.");
+    if(!table
+    || table_size < 1) {
+        ERROR_LOG("hash_add_entry: Failure, provided table was in an invalid state.");
         return false;
     }
+
+    if(!hash_index) {
+        ERROR_LOG("hash_add_entry: Provided pointer for the result hash index was invalid.");
+        return false;
+    }
+
+    table_size *= 2; // match actual allocation.
 
     // generate hash index.
-    *hash_index = table_size;
+    *hash_index = 0;
     if(!_generate_hash_index(key, key_size, table_size, hash_index)) {
         ERROR_LOG("hash_add_entry: Failed to generate hash key for provided entry values.");
         *hash_index = 0;
         return false;
-    } else if(*hash_index > table_size) {
+    }
+    if(*hash_index >= table_size || *hash_index == 0) {
         ERROR_LOG("hash_add_entry: Unexpected error, generated hash key was invalid.");
-        return false;
-    } else if(*hash_index >= table_size) {
-        ERROR_LOG("hash_add_entry: Unexpected error, generated hash key was too large.");
+        *hash_index = 0;
         return false;
     }
 
@@ -48,35 +63,43 @@ bool hash_add_entry(
         DEBUG_LOG("hash_add_entry: Collision, generated hash was not unique. Seeking empty slot.");
         size_t probe_counter = *hash_index;
         size_t step_counter = 0;
-        while(table[probe_counter]) {
+        while(table[probe_counter]) { 
             if(++step_counter >= table_size) { // full loop.
                 ERROR_LOG("hash_add_entry: Critical failure, no empty hash slots were found.");
                 return false;
             }
 
-            if(++probe_counter >= table_size)
-                probe_counter = 0; 
+            if(++probe_counter >= table_size) {
+                ++step_counter;
+                probe_counter = 1; // skip 0.
+            }
         }
 
         *hash_index = probe_counter;
     }
 
-    table[*hash_index] = (hash_entry *)calloc(1, (sizeof(hash_entry) + key_size + value_size));
+    // flatten struct.
+
+    table[*hash_index] = (hash_entry *)calloc(1, (sizeof(hash_entry) + (key_size + 1) + (value_size + 1)));
     if(!table[*hash_index]) {
         ERROR_LOG("hash_add_entry: Failure, could not allocate memory for hash index.");
         return false;
     }
+
     hash_entry *entry = (table[*hash_index]);
 
     entry->key_size = key_size;
     entry->value_size = value_size;
-    
-    // flatten struct.
+     
     char *data_offset = ((char *)entry + sizeof(hash_entry));
+
+    // set pointers to memory block offset.
     entry->key = data_offset;
-    entry->value = (data_offset + key_size);
+    entry->value = (data_offset + (key_size + 1));
     memcpy(entry->key, key, key_size);
+    entry->key[key_size + 1] = '\0';
     memcpy(entry->value, value, value_size);
+    entry->value[value_size + 1] = '\0';
 
     return true;
 }
@@ -87,30 +110,36 @@ bool hash_remove_entry(
     hash_entry **table, 
     size_t table_size
 ) {
-    if(key == NULL) {
-        ERROR_LOG("hash_remove_entry: Provided key pointer was NULL.");
+    if(!key
+    || key_size < 1) {
+        ERROR_LOG("hash_remove_entry: Provided key values were invalid.");
         return false;
     }
 
-    if(key_size < 1) {
-        ERROR_LOG("hash_remove_entry: Provided key_size value was invalid.");
+    if(!table
+    || table_size < 1) {
+        ERROR_LOG("hash_remove_entry: Failure, provided table was in an invalid state.");
         return false;
     }
 
-    size_t hash_index = table_size;
+    size_t hash_index = 0;
     if(!_generate_hash_index(key, key_size, table_size, &hash_index)) {
         ERROR_LOG("hash_remove_entry: Failed to generate a hash index from provided values.");
         return false;
-    } else if(hash_index < 0 || hash_index >= table_size) {
+    }
+    if(hash_index == 0 || hash_index >= table_size) {
         ERROR_LOG("hash_remove_entry: Unexpected error, an invalid hash index was generated.");
         return false;
     }
 
-    if(table[hash_index]) {
-        free(table[hash_index]);
-    } else { // if not found, see if elsewhere.
+    table_size *= 2; // match actual allocation.
+
+    // check if key value is in hash index, if not, linear search.
+    if(!table[hash_index] 
+    || strcmp(table[hash_index]->key, key) != 0) {
         size_t result_index = table_size;
         if(!_hash_seek_entry(key, key_size, table, table_size, hash_index, &result_index)
+        || result_index == 0
         || result_index >= table_size) {
             ERROR_LOG("hash_remove_entry: Failure, unable to locate key in hash table.");
             return false;
@@ -119,40 +148,54 @@ bool hash_remove_entry(
         hash_index = result_index;
     }
 
-    memset(table[hash_index], 0, sizeof(hash_entry)); 
+    free(table[hash_index]);
+    table[hash_index] = NULL;
+
     return true;
 }
 
 bool hash_fetch_entry(
-    char *key, 
-    size_t key_size, 
-    hash_entry **table, 
-    size_t table_size, 
-    void *value // out parameter.
+    char *key,
+    size_t key_size,
+    hash_entry **table,
+    size_t table_size,
+    void **value // out parameter.
 ) {
     if(!key
-    || key_size < 1
-    || !table
-    || !*table
-    || table_size < 1
-    || !value) {
+    || key_size < 1) {
         ERROR_LOG("hash_fetch_entry: Failure, invalid values were provided.");
         return false;
     }
 
-    size_t hash_index = table_size;
+    if(!table
+    || table_size < 1) {
+        ERROR_LOG("hash_fetch_entry: Failure, provided table was in an invalid state.");
+        return false;
+    }
+
+    if(!value) {
+        ERROR_LOG("hash_fetch_entry: Failure, provided result pointer was NULL.");
+        return false;
+    }
+
+    table_size *= 2; // match actual allocation.
+
+    size_t hash_index = 0;
     if(!_generate_hash_index(key, key_size, table_size, &hash_index)) {
         ERROR_LOG("hash_fetch_entry: Failed to generate a hash index from provided values.");
         return false;
-    } else if(hash_index < 0 || hash_index >= table_size) {
+    }
+    if(hash_index == 0 || hash_index >= table_size) {
         ERROR_LOG("hash_fetch_entry: Unexpected error, an invalid hash index was generated.");
         return false;
     }
 
-    if(!table[hash_index]) {
-        size_t result_index = (table_size);
+    // check if key is in index, if not, linear search.
+    if(!table[hash_index] || strcmp(table[hash_index]->key, key) != 0) {
+        size_t result_index = 0;
         if(!_hash_seek_entry(key, key_size, table, table_size, hash_index, &result_index)
-        || result_index >= table_size) {
+        || result_index >= table_size
+        || result_index == 0) {
             ERROR_LOG("hash_fetch_entry: Failure, unable to locate key in hash table.");
             return false;
         }
@@ -161,7 +204,9 @@ bool hash_fetch_entry(
     }
 
     if(table[hash_index]) {
-        return *table[hash_index]->value;
+        // gives caller direct access (better than allocating hidden memory).
+        *value = table[hash_index]->value;
+        return true;
     } else {
         ERROR_LOG("hash_fetch_entry: Unexpected error, hash fetch logic fell through to an invalid state.");
         return false;
@@ -169,38 +214,39 @@ bool hash_fetch_entry(
 }
 
 bool hash_free(hash_entry **table, size_t table_size) {
-    if(table == NULL) {
-        ERROR_LOG("hash_free: Provided table was NULL.");
+    if(!table
+    || table_size < 1) {
+        ERROR_LOG("hash_free: Provided table was in an invalid state.");
         return false;
     }
 
-    hash_entry *table_cursor = *table;
-    size_t table_counter = 0;
-    while(table_cursor != NULL && table_counter < table_size) {
-        if(table_cursor->key != NULL)
-            free(table_cursor->key);
+    table_size *= 2; // match actual allocation.
 
-        if(table_cursor->value != NULL)
-            free(table_cursor->value);
-
-        ++table_cursor;
-        ++table_counter;
-    }
-
+    for(size_t cursor = 0; cursor < table_size; cursor++)
+        if(table[cursor]) {
+            free(table[cursor]);
+            table[cursor] = NULL;
+        }
+ 
     free(*table);
-    *table = NULL;
+    *table = NULL; // have the caller handle this?
 
     return true;
 }
 
 bool hash_allocate(size_t num_entries, hash_entry **table) {
-    if(table == NULL) {
-        ERROR_LOG("allocate_hash: Provided hash entry was NULL.");
+    if(table) {
+        ERROR_LOG("hash_allocate: Error, provided table pointer was already allocated.");
         return false;
     }
 
-    // increase the num of slots so that collisions cannot destroy the map.
-    *table = calloc((num_entries * 2), sizeof(hash_entry));
+    if(num_entries < 2) {
+        ERROR_LOG("hash_allocate: Error, provided values were invalid.");
+        return false;
+    }
+
+    // increase the number of slots so that collisions cannot destroy the map.
+    *table = calloc((num_entries * 2), sizeof(hash_entry *));
     if(*table == NULL) {
         ERROR_LOG("allocate_hash: Failed to allocate memory for hash-table.");
         return false;
@@ -218,10 +264,11 @@ static bool _hash_seek_entry(
     size_t hash_index,
     size_t *result_index
 ) {
-    *result_index = table_size;
+    *result_index = 0;
+    table_size *= 2; // match actual allocation.
 
     size_t probe_counter = hash_index;
-    for(int step_counter = 0; step_counter < table_size; ++step_counter) {
+    for(size_t step_counter = 0; step_counter < table_size; ++step_counter) {
         if(++probe_counter >= table_size)
             probe_counter = 0;
 
@@ -242,38 +289,29 @@ static bool _generate_hash_index(
     size_t table_size, 
     size_t *hash_index
 ) {
-    if(key == NULL) {
-        ERROR_LOG("_generate_hash_index: Provided key pointer was NULL.");
+    if(!key
+    || key_size < 1
+    || table_size < 2) {
+        ERROR_LOG("_generate_hash_index: Provided values were invalid.");
         return false;
     }
 
-    if(key_size < 1) {
-        ERROR_LOG("_generate_hash_index: Provided key size was invalid, must be a positive integer less than (%d).", MAX_KEY_LENGTH);
-        return false;
-    }
-
-    if(hash_index == NULL) {
+    if(!hash_index) {
         ERROR_LOG("_generate_hash_index: Provided hash index pointer was NULL.");
         return false;
     }
+
+    table_size *= 2; // match actual allocation.
  
     // iterate on key index,
-    // each iteration scales by salt (prime num) and adds the current character value.
-    long keygen_value = 0;
-    char *key_cursor = key; 
-    while(key_cursor && *key_cursor != '\0')
-        keygen_value = (keygen_value * KEYGEN_SALT + (long)*key_cursor);
-
-    if(keygen_value == 0) {
-        ERROR_LOG("_generate_hash_index: Unexpected error, generated key hash was not mutated properly.");
-        return false;
-    }
-
-    // absolute value (scaled to fit in table).
-    int keygen_remainder = (keygen_value % table_size);
-    *hash_index = (keygen_remainder > 0)
-        ? keygen_remainder
-        : -(keygen_remainder);
+    size_t keygen_value = 0; 
+    for(size_t cursor = 0; cursor < key_size; cursor++) 
+        keygen_value = ((keygen_value * KEYGEN_SALT) + (size_t)key[cursor]); // unsigned overflow wraps.
+ 
+    size_t result = (keygen_value % table_size); // modulo scales to fit in table.
+    *hash_index = (!result) // 0 is invalid.
+        ? ++result
+        : result;
 
     return true;
 }
