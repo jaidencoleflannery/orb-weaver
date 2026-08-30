@@ -38,11 +38,11 @@ bool hash_fetch_entry(
 
 bool hash_allocate(
     size_t     num_entries, 
-    hash_entry **table
+    hash_entry ***table
 );
 
 bool hash_free(
-    hash_entry **table, 
+    hash_entry ***table, 
     size_t     table_size
 );
 

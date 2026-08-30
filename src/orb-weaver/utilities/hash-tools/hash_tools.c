@@ -69,9 +69,9 @@ bool hash_add_entry(
                 return false;
             }
 
-            if(++probe_counter >= table_size) {
-                ++step_counter;
+            if(++probe_counter >= table_size) { 
                 probe_counter = 1; // skip 0.
+                ++step_counter; // count 0 as a step.
             }
         }
 
@@ -97,9 +97,9 @@ bool hash_add_entry(
     entry->key = data_offset;
     entry->value = (data_offset + (key_size + 1));
     memcpy(entry->key, key, key_size);
-    entry->key[key_size + 1] = '\0';
+    entry->key[key_size] = '\0';
     memcpy(entry->value, value, value_size);
-    entry->value[value_size + 1] = '\0';
+    entry->value[value_size] = '\0';
 
     return true;
 }
@@ -122,6 +122,8 @@ bool hash_remove_entry(
         return false;
     }
 
+    table_size *= 2; // match actual allocation.
+
     size_t hash_index = 0;
     if(!_generate_hash_index(key, key_size, table_size, &hash_index)) {
         ERROR_LOG("hash_remove_entry: Failed to generate a hash index from provided values.");
@@ -130,9 +132,7 @@ bool hash_remove_entry(
     if(hash_index == 0 || hash_index >= table_size) {
         ERROR_LOG("hash_remove_entry: Unexpected error, an invalid hash index was generated.");
         return false;
-    }
-
-    table_size *= 2; // match actual allocation.
+    } 
 
     // check if key value is in hash index, if not, linear search.
     if(!table[hash_index] 
@@ -213,8 +213,9 @@ bool hash_fetch_entry(
     }
 }
 
-bool hash_free(hash_entry **table, size_t table_size) {
+bool hash_free(hash_entry ***table, size_t table_size) {
     if(!table
+    || !*table
     || table_size < 1) {
         ERROR_LOG("hash_free: Provided table was in an invalid state.");
         return false;
@@ -223,9 +224,9 @@ bool hash_free(hash_entry **table, size_t table_size) {
     table_size *= 2; // match actual allocation.
 
     for(size_t cursor = 0; cursor < table_size; cursor++)
-        if(table[cursor]) {
-            free(table[cursor]);
-            table[cursor] = NULL;
+        if(*table[cursor]) {
+            free(*table[cursor]);
+            *table[cursor] = NULL;
         }
  
     free(*table);
@@ -234,8 +235,8 @@ bool hash_free(hash_entry **table, size_t table_size) {
     return true;
 }
 
-bool hash_allocate(size_t num_entries, hash_entry **table) {
-    if(table) {
+bool hash_allocate(size_t num_entries, hash_entry ***table) {
+    if(*table) {
         ERROR_LOG("hash_allocate: Error, provided table pointer was already allocated.");
         return false;
     }
@@ -265,12 +266,13 @@ static bool _hash_seek_entry(
     size_t *result_index
 ) {
     *result_index = 0;
-    table_size *= 2; // match actual allocation.
 
     size_t probe_counter = hash_index;
     for(size_t step_counter = 0; step_counter < table_size; ++step_counter) {
-        if(++probe_counter >= table_size)
-            probe_counter = 0;
+        if(++probe_counter >= table_size) { 
+            probe_counter = 1; // skip 0.
+            ++step_counter; // count 0 as a step.
+        }
 
         if(table[probe_counter] 
         && strcmp(table[probe_counter]->key, key) == 0) {
@@ -301,8 +303,6 @@ static bool _generate_hash_index(
         return false;
     }
 
-    table_size *= 2; // match actual allocation.
- 
     // iterate on key index,
     size_t keygen_value = 0; 
     for(size_t cursor = 0; cursor < key_size; cursor++) 
